@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+.gm/
+runs/
+*.bin
+data/tinystories_slice.txt
