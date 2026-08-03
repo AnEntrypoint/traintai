@@ -70,6 +70,7 @@ def main():
         scenarios = scenarios[: args.limit]
 
     n = fmt = beats = acts = invalid = oracle_hits = 0
+    price_n = price_ok = 0
     by_kind = {"none": [0, 0], "GOTO": [0, 0], "DEAL": [0, 0]}
     samples = []
     for s in scenarios:
@@ -82,6 +83,14 @@ def main():
         lines = [l for l in text.strip().split("\n") if l.strip()]
         action_lines = [l for l in lines if l.strip().startswith("[")]
         action = parse_action(action_lines[0]) if action_lines else None
+        oracle = s["oracle_action"]
+        if oracle and oracle.startswith("[DEAL:"):
+            oparts = oracle[7:-1].rsplit(" ", 1)
+            oprice = int(oparts[1])
+            quoted = re.findall(r"(\d+)\s*gold", text)
+            if quoted:
+                price_n += 1
+                price_ok += any(abs(int(q) - oprice) <= 0.3 * oprice for q in quoted)
         n += 1
         if len(action_lines) <= 1 and (not action_lines or action is not None):
             fmt += 1
@@ -95,7 +104,6 @@ def main():
                 invalid += 1
             elif action[0] == "DEAL" and action[1] not in ITEM_NAMES:
                 invalid += 1
-        oracle = s["oracle_action"]
         kind = "none" if oracle is None else ("GOTO" if oracle.startswith("[GOTO") else "DEAL")
         ok = oracle_ok(oracle, action)
         by_kind[kind][0] += ok
@@ -111,6 +119,8 @@ def main():
     print(f"action rate      : {acts}/{n} = {acts / n:.0%}")
     print(f"invalid actions  : {invalid}/{max(1, acts)} emitted")
     print(f"oracle match     : {oracle_hits}/{n} = {oracle_hits / n:.0%}")
+    if price_n:
+        print(f"price fidelity   : {price_ok}/{price_n} quoted prices within 30% of oracle")
     for k, (h, t) in by_kind.items():
         if t:
             print(f"  {k:5s}: {h}/{t} = {h / t:.0%}")

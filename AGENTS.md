@@ -163,3 +163,15 @@ near-total abstention (the safe local optimum under K=8 sampling) and
 cost 8pp forge pass. Ship stays r16 (74%). This is the second recorded
 instance of reward-shaping overshoot (first: template collapse era) --
 shape rewards against the measured safe-optimum, not the ideal one.
+
+## Sibling-clone consolidation audit (2026-08-03)
+
+Audited /c/dev/tai (older clone at 1b749b7 plus untracked notebook-era
+files) for anything worth bringing across. Verdict: nearly nothing --
+every artifact there is a mock-era placeholder that the real
+implementations here supersede (npc_economy_sim 473B toy vs sim_econ.py,
+iterative_loop fake-metric sprints vs round.py, output_filter vs
+st_prepare beat stripping, runs/*.jsonl simulated curves, a 0-byte
+best_npc_checkpoint.json). The ONE adopted idea: price fidelity as an
+eval metric (from npc_final_eval.py) -- sim_eval now reports whether
+quoted prices in DEAL scenarios land within 30% of the oracle price.
