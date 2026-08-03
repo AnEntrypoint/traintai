@@ -4,3 +4,4 @@ __pycache__/
 runs/
 *.bin
 data/tinystories_slice.txt
+data/npc/pippa_deduped.jsonl
