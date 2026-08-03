@@ -175,3 +175,19 @@ st_prepare beat stripping, runs/*.jsonl simulated curves, a 0-byte
 best_npc_checkpoint.json). The ONE adopted idea: price fidelity as an
 eval metric (from npc_final_eval.py) -- sim_eval now reports whether
 quoted prices in DEAL scenarios land within 30% of the oracle price.
+
+## World expansion (adopted from the accelerated-runs notebooks)
+
+- Year-tagged EVENTS, ORIGIN_PLACE per trade, LINEAGE per keeper: lore now
+  links item -> origin place -> historical event ("shimmering work out of
+  Karhold, from before the Comet Year").
+- EXPANDED_ITEMS: 4 combinatorial variants per canonical item (adjective x
+  price multiplier x structured property/provenance), fixed seed. Filler
+  descriptions from the notebooks were rejected; every expanded item keeps
+  the property + provenance structure.
+- Scarcity World in sim_econ: stock ticks deplete/regrow and every change
+  leaves a narratable reason (526 conversations cite them), restock
+  supplier chains (234: item -> origin place -> 1.3x reward -> [GOTO]).
+- Rejected: fixed [TRADE:50] templates, random-choice oracles, fake sprint
+  marathons, mana/combat scope creep. Deep spatial/territory sim is a
+  future lever if dialog geography ever needs it.
