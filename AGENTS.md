@@ -1,7 +1,7 @@
 # tai — agent guide
 
 Single-purpose SillyTavern NPC dialog model (28.9M params: 559K dense core +
-25.2M PLE table) with a Rust desktop runtime. Ship: `runs/ple-st-r14-grpo.pt`
+25.2M PLE table) with a Rust desktop runtime. Ship: `runs/ple-st-r16-grpo.pt`
 (honest forge pass 74%), exported to `firmware/model/model.bin`.
 
 ## Commands
@@ -144,14 +144,38 @@ Anti-patterns from that run, never to be repeated here:
 - Prepared-data recipe: saturated. r14 74% -> r15 73% (flat). More
   identical rounds buy nothing; do not run them.
 - Dialog-only: DONE (92% -> 0% beats, held across r16-r17).
-- Action accuracy: the open headroom. r16 GOTO 9%/DEAL 5% (emitting 53%,
-  abstention 71%); r17 with action-reward v1 overshot to abstention
-  (GOTO/DEAL 0%, action rate 6%, forge 66% -- rejected for ship).
-  Next lever (recorded): partial-credit action reward -- verb-right-arg-
-  wrong -0.2, missing-oracle-action -0.8, valid-but-unwarranted -0.3,
-  exact match +1.0 -- plus a larger sim-prompt share. Expected: abstention
-  holds >90%, GOTO/DEAL climb toward 50%+ over 2-3 rounds (the intent
-  lever moved 23% -> 5% in two rounds once the reward could see it).
+- Action accuracy: the open headroom, now with a measured reward-shaping
+  arc (r16 baseline: GOTO 9%/DEAL 5%, emitting 53%, abstention 71%):
+  - r17 (v1: exact +1.0 / miss -1.0 / unwarranted -0.5, additive):
+    overshot to abstention (6% actions, forge 66%) -- rejected.
+  - r19 (v2 partial credit: abstain-miss -0.8, wrong-arg -0.2, wrong-verb
+    -0.6, unwarranted -0.3, exact +1.0, all additive): abstention softened
+    (13% actions, none-acc 88%, forge 74% held) but GOTO/DEAL exact 0%.
+    Root cause measured: the pass-zone sampler (pass = mean reward >= 3.0)
+    excludes oracle prompts after 2 fresh visits -- the action gradient
+    barely trained.
+  - r20 (v2 + oracle-prompt sampling floor, every 3rd step): actions 0%.
+    The floor worked (oracle prompts visibly trained) but additive shaping
+    leaves clean abstention (~3.2 total) above sloppy attempts (~2.4), so
+    more oracle-prompt training reinforced abstention harder.
+  - r21 (v4: abstention on an oracle prompt early-returns flat -1.0, no
+    dialog-term harvest): equilibrium shattered -- actions 96%, none-acc
+    100% held, but 283/284 malformed (unclosed brackets, glued dialog),
+    format rate 4%.
+  - r22 (r21 + 300 more steps): FLAT -- invalid 272/276 (98.6%), format
+    9%, GOTO/DEAL exact still 0%. All-garbage K=8 groups carry no syntax
+    gradient: GRPO cannot amplify a well-formed action that never appears
+    in the group, and the garbage attractor (2.2) sits closer to the
+    policy than the exact form (4.0).
+  VERDICT: action accuracy via GRPO reward shaping is a DEAD lever at
+  this scale -- four measured variants, all worse than r16's SFT-only
+  behavior (53% emission, 92% valid, GOTO 9%/DEAL 5%). Consistent with
+  the standing lesson: form/syntax is a data problem, not a reward
+  problem. The open path is data-side: rejection-sample the model's own
+  VALID oracle-matching actions into the flywheel, and/or denser exact-
+  action sim SFT rows. The variants are preserved behind
+  `npc_grpo.py --action-reward off|v2|gate` (default off = r16 ship
+  recipe; the oracle-prompt sampling floor activates with the flag).
 - Chain depth (~0.1 grounded sentences) is the deepest remaining quality
   gap; likely needs sim-generated multi-sentence gold chains, the same
   shape of lever that fixed grounding (object_ungrounded 15% -> 3%).
@@ -163,6 +187,29 @@ near-total abstention (the safe local optimum under K=8 sampling) and
 cost 8pp forge pass. Ship stays r16 (74%). This is the second recorded
 instance of reward-shaping overshoot (first: template collapse era) --
 shape rewards against the measured safe-optimum, not the ideal one.
+
+## Rounds 18-22 results (action-reward arc, all non-ship; r16 stays)
+
+- r18: standalone GRPO probe, never a round; sim_eval actions 1%,
+  GOTO/DEAL/BUY 0% -- deepest abstention collapse. Measured and rejected.
+- r19: first full round through round.py with v2 partial-credit reward +
+  refreshed mixture (PIPPA 1457 real rows in bins, forge capped 2500, new
+  sim data). SFT top-up flat (val 2.3702 init -> 2.3756; best=step0, and
+  round.py's GRPO now consumes -best.pt when present). Forge 74% held;
+  sim none-acc 71%->88% but exact GOTO/DEAL 0% -- sampler starvation
+  measured (pass-zone cutoff excludes oracle prompts).
+- r20: + oracle sampling floor. Actions 0% -- additive shaping leaves
+  abstention (3.2) above sloppy attempts (2.4); floor amplified it.
+- r21: + v4 abstain-gate (flat -1.0 early return). Actions 96%, none-acc
+  100%, but 283/284 malformed, format 4%. Continuation: r22 for syntax.
+- r22: +300 steps from r21. Flat: invalid 272/276, format 9%, exact
+  GOTO/DEAL 0%. Syntax never entered K=8 groups, so no gradient; the
+  reward-shaping arc on actions stops here (dead lever, see above).
+  Third recorded reward-shaping overshoot: additive penalties leave the
+  dialog harvest intact, and an early-return gate that removes it only
+  trades abstention for garbage.
+- PIPPA holdout gate is now runnable (src/holdout_eval.py): r19 357.11 vs
+  r16 358.74 teacher-forced ppl -- the round did not overfit real data.
 
 ## Sibling-clone consolidation audit (2026-08-03)
 
@@ -212,10 +259,12 @@ self-distillation risk. Measures taken:
 - PIPPA (PygmalionAI, apache-2.0) pulled and converted: 1457 real RP
   conversations (beat-stripped at prepare) + 74 held out in
   pippa_holdout.jsonl, which NEVER enters the bins -- it is the real-data
-  generalization gate.
+  generalization gate, runnable as `src/holdout_eval.py <ckpt>`
+  (teacher-forced ppl; r19 357.11 vs r16 358.74, flat = no overfit).
 - Forge rows capped at 2500 in st_prepare (self-distillation limit).
 - Best-val checkpointing in train.py (ple-<tag>-s0-best.pt on every val
-  improvement); round.py's GRPO stage can consume best over latest.
+  improvement); round.py's GRPO stage consumes -best over latest when
+  present (r19: top-up val rose, best=step0 shielded the GRPO start).
 - Gameplay verbs now three: [DEAL] (NPC sells), [BUY] (NPC buys the
   player's item -- 454 convos), [GOTO] (travel). Quest turn-ins (188
   convos) close the restock loop: contract -> player returns with item ->

@@ -67,7 +67,9 @@ def main():
                    os.path.join(RUNS, f"{args.tag}.log"))
     if rc:
         return
-    rc = run_stage("grpo", ["npc_grpo.py", sft_ckpt, "--st", "150", "--sim", "100",
+    grpo_in = best_ckpt if os.path.exists(best_ckpt) else sft_ckpt
+    print(f"[grpo] input {os.path.basename(grpo_in)}", flush=True)
+    rc = run_stage("grpo", ["npc_grpo.py", grpo_in, "--st", "150", "--sim", "100",
                             "--steps", str(args.grpo_steps), "--out", grpo_ckpt],
                    os.path.join(RUNS, f"{args.tag}-grpo.log"))
     if rc:

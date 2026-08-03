@@ -2,7 +2,10 @@
 
 Per prompt: sample K responses from the current policy, score each with the
 rule-based adherence reward (no invented names, no template echo, intent
-engagement, clean stop, non-trivial length, no n-gram looping), advantage =
+engagement, clean stop, non-trivial length, no n-gram looping; with
+--action-reward v2, oracle-labeled sim prompts add a partial-credit action
+term, and gate additionally turns abstention on an oracle prompt into a
+flat -1.0 early return with no dialog-term harvest), advantage =
 (reward - group mean) / group std, and take a policy-gradient step on the
 sampled tokens' per-token mean logprob (length-normalized, so the objective
 scale does not grow with the generation window). No critic; a KL anchor to
@@ -11,9 +14,13 @@ the frozen starting policy at tiny lr.
 Prompts are chosen by adaptive difficulty: each prompt's running pass rate
 (mean reward >= 3.0) is tracked and the sampler draws from prompts in the
 15-85% learning zone plus fresh prompts (RL-scaling curriculum), instead of
-round-robin over already-saturated prompts. Response dedup is global across
-the whole run, so a template that farms the reward once is penalized on
-every later repeat.
+round-robin over already-saturated prompts. With --action-reward active,
+every third step is reserved for oracle-bearing sim prompts: the pass-zone
+cutoff would otherwise exclude them after two fresh visits (their early
+achievable mean sits far below the 3.0 pass bar), so the action gradient
+never trains (measured: r19 GOTO/DEAL exact match 0%). Response dedup is
+global across the whole run, so a template that farms the reward once is
+penalized on every later repeat.
 
 The reward is the npc_score rule set: this is exactly the RLAIF-for-dialogue-
 impression setup (arXiv:2501.12698) with a programmatic reward model, and the
@@ -125,7 +132,7 @@ def build_sim_prompts(path, n):
     return out
 
 
-def reward_of(text, stopped, q, bio, oracle=None):
+def reward_of(text, stopped, q, bio, oracle=None, action_reward="off"):
     r = 0.0
     body = text.strip()
     swapped = False
@@ -170,7 +177,9 @@ def reward_of(text, stopped, q, bio, oracle=None):
         r -= 0.5
     acts = [l for l in body.split(chr(10)) if l.strip().startswith("[")]
     act = parse_action(acts[0]) if acts else None
-    if oracle is not None:
+    if oracle is not None and action_reward != "off":
+        if not acts and action_reward == "gate":
+            return -1.0
         if oracle_ok(oracle, act):
             r += 1.0
         elif act is None:
@@ -225,6 +234,10 @@ def main():
     ap.add_argument("--wide", type=int, default=0, help="extra random-name personas from synthetic_names.jsonl")
     ap.add_argument("--st", type=int, default=0, help="use ST-format prompts with N cards")
     ap.add_argument("--sim", type=int, default=0, help="oracle-labeled sim prompts from data/npc/sim_grpo_prompts.jsonl")
+    ap.add_argument("--action-reward", choices=["off", "v2", "gate"], default="off",
+                    help="oracle action reward: off = unwarranted/invalid clauses only (ship recipe); "
+                         "v2 = partial credit (abstain-miss -0.8, wrong-arg -0.2, wrong-verb -0.6, exact +1.0); "
+                         "gate = v2 plus flat -1.0 early return for abstention on oracle prompts")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -258,7 +271,8 @@ def main():
         in_zone = [i for i, (a, p) in enumerate(stats) if a >= 2 and 0.15 <= p / a <= 0.85]
         fresh = [i for i, (a, p) in enumerate(stats) if a < 2]
         pool = (in_zone + fresh) or list(range(len(prompts)))
-        pidx = step_rng.choice(pool)
+        oracle_pool = [i for i, p in enumerate(prompts) if p[3] is not None] if args.action_reward != "off" else []
+        pidx = step_rng.choice(oracle_pool if oracle_pool and step % 3 == 0 else pool)
         prompt, q, bio, oracle = prompts[pidx]
         ids = torch.tensor([tok.encode(prompt).ids], device=device)
         plen = ids.shape[1]
@@ -276,7 +290,7 @@ def main():
             if stops:
                 text = text[: min(stops)]
             texts.append(text)
-            rewards.append(reward_of(text, stopped, q, bio, oracle))
+            rewards.append(reward_of(text, stopped, q, bio, oracle, args.action_reward))
             seqs.append(row)
 
         for i, text in enumerate(texts):

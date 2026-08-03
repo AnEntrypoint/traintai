@@ -2,6 +2,7 @@ __pycache__/
 .venv/
 .gm/
 runs/
+firmware/
 *.bin
 data/tinystories_slice.txt
 data/npc/pippa_deduped.jsonl

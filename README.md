@@ -30,6 +30,8 @@ arc is in this repo's README history and in `AGENTS.md`.
   dashboard (the co-evolution flywheel; passing rows feed the next round)
 - `src/sim_eval.py` — held-out simulation adherence: format, action-beats,
   invalid-action, oracle match (none/GOTO/DEAL separately)
+- `src/holdout_eval.py` — teacher-forced ppl on the PIPPA holdout (the
+  real-data generalization gate; run per round, compare vs ship)
 - `src/round.py` — ONE ROUND end to end: prepare -> SFT -> GRPO -> forge
   -> sim_eval, with a summary block. All rounds run through this.
 - `src/export.py` — checkpoint -> PLE1 int4 binary for the Rust runtime
