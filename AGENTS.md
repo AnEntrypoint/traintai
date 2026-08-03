@@ -104,3 +104,62 @@ output-scope narrowing (dialog-only, action triggers) and sim-oracle data.
   needs a tokenizer retrain, parked.
 - `src/round.py` -- one round end to end (prepare -> SFT -> GRPO -> forge
   -> sim_eval) with a summary block. All future rounds run through it.
+
+## Lessons adapted from the Colab notebook era
+
+The old Colab notebook (gist c75ce7205d295d2f2399f6084987c558) attacked
+the same system and produced the right IDEAS with none of the evidence.
+Each idea now has a real counterpart in this repo:
+
+- Engine-hook agency tags ([TRAVEL:]/[TRADE:]) -> REAL: [GOTO:]/[DEAL:]
+  bracket actions with an economy oracle and held-out accuracy metrics.
+- "Interpretability Quotient" -> REAL: sim_eval's action rate,
+  invalid-action count, and oracle match split none/GOTO/DEAL.
+- "Dialogue purity" -> REAL: action-beats rate, measured 92% -> 0%.
+- 10x combinatorial lore diversity -> REAL: combinatorial template banks
+  + trade/trait/place fills; no raw scenario splicing.
+- HF regularization against overfit -> REAL: real roleplay sets
+  (chimbiwide) + a TinyStories slice in every bin build.
+- Live per-pulse dashboards -> REAL: round.py's per-round summary block
+  plus the forge and sim_eval dashboards, computed from model outputs.
+- AGENTS.md-as-progress-doc -> REAL: this file, updated every round.
+
+Anti-patterns from that run, never to be repeated here:
+1. Simulated metrics: "sprints" drew learning curves with random.uniform
+   and declared "mastery 1.0" by construction. No number is recorded in
+   this repo without a model run behind it.
+2. Victory by declaration: five identical "final convergence" cells.
+   A result lands once, with its measurement.
+3. No held-out data: every "eval" scored the same distribution that
+   produced it. Held-out sets here use disjoint seeds (sim_eval) or
+   unseen cards (forge).
+4. Evaluating constants: the 1M-sample "stress test" scored one fixed
+   string per profession. Load tests are not correctness tests.
+5. Plaintext credentials in notebooks: an HF token was committed to a
+   gist (which keeps revision history -- rotating the token is the only
+   fix). Secrets never enter this repo, gists, or notebooks.
+
+## Gains projection (measured basis)
+
+- Prepared-data recipe: saturated. r14 74% -> r15 73% (flat). More
+  identical rounds buy nothing; do not run them.
+- Dialog-only: DONE (92% -> 0% beats, held across r16-r17).
+- Action accuracy: the open headroom. r16 GOTO 9%/DEAL 5% (emitting 53%,
+  abstention 71%); r17 with action-reward v1 overshot to abstention
+  (GOTO/DEAL 0%, action rate 6%, forge 66% -- rejected for ship).
+  Next lever (recorded): partial-credit action reward -- verb-right-arg-
+  wrong -0.2, missing-oracle-action -0.8, valid-but-unwarranted -0.3,
+  exact match +1.0 -- plus a larger sim-prompt share. Expected: abstention
+  holds >90%, GOTO/DEAL climb toward 50%+ over 2-3 rounds (the intent
+  lever moved 23% -> 5% in two rounds once the reward could see it).
+- Chain depth (~0.1 grounded sentences) is the deepest remaining quality
+  gap; likely needs sim-generated multi-sentence gold chains, the same
+  shape of lever that fixed grounding (object_ungrounded 15% -> 3%).
+
+## Round 17 result
+
+Action reward v1: exact-match +1.0 / miss -1.0 / unwarranted -0.5 taught
+near-total abstention (the safe local optimum under K=8 sampling) and
+cost 8pp forge pass. Ship stays r16 (74%). This is the second recorded
+instance of reward-shaping overshoot (first: template collapse era) --
+shape rewards against the measured safe-optimum, not the ideal one.
