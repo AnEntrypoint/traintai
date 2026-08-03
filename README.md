@@ -39,11 +39,14 @@ arc is in this repo's README history and in `AGENTS.md`.
 
 ```bash
 uv sync
+UV_NO_SYNC=1 uv pip install torch --index-url https://download.pytorch.org/whl/cu128 --reinstall-package torch   # first time only: the lock pins CPU torch
 UV_NO_SYNC=1 uv run python src/round.py --prev runs/<prev>.pt --tag st-rN
 ```
 
-GPU note: always `UV_NO_SYNC=1` (uv otherwise reverts to CPU torch), and
-run one torch job at a time.
+GPU note: `UV_NO_SYNC=1` only protects an already-provisioned venv -- on a
+fresh clone you must sync AND reinstall torch from the cu128 index once
+first, or every script dies with `ModuleNotFoundError: torch` (or worse,
+silently trains on CPU). Run one torch job at a time.
 
 ## Data regeneration
 

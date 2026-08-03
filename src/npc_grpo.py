@@ -31,7 +31,7 @@ from tokenizers import Tokenizer
 
 from model import Config, TinyLM
 from npc_eval import PERSONAS
-from npc_score import COMMON, INTENT_KEYS, ST_INTENT_KEYS, TEMPLATE_ECHO, drift_names, ngram_repeat, oracle_ok, parse_action
+from npc_score import COMMON, INTENT_KEYS, ST_INTENT_KEYS, TEMPLATE_ECHO, drift_names, ngram_repeat, oracle_ok, parse_action, ACTION_RE
 from st_world import PLACES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -171,7 +171,16 @@ def reward_of(text, stopped, q, bio, oracle=None):
     acts = [l for l in body.split(chr(10)) if l.strip().startswith("[")]
     act = parse_action(acts[0]) if acts else None
     if oracle is not None:
-        r += 1.0 if oracle_ok(oracle, act) else -1.0
+        if oracle_ok(oracle, act):
+            r += 1.0
+        elif act is None:
+            r -= 0.8
+        else:
+            om = ACTION_RE.match(oracle)
+            if om and act[0] == om.group(1):
+                r -= 0.2
+            else:
+                r -= 0.6
     elif acts:
         if act is None:
             r -= 1.0
@@ -180,7 +189,7 @@ def reward_of(text, stopped, q, bio, oracle=None):
         elif act[0] == "DEAL" and act[1].lower() not in bio.lower():
             r -= 1.0
         else:
-            r -= 0.5
+            r -= 0.3
     if len(body) >= 24:
         r += 0.5
     if ngram_repeat(body):
