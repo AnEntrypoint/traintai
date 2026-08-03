@@ -79,6 +79,59 @@ PLACES = [
 
 QUEST_SOURCE = os.path.join(NPC, "dprashar-output.json")
 
+EVENTS = [
+    ("the Frost War", "Year 214", "the pass froze solid for three winters"),
+    ("the Great Cataclysm", "Year 389", "the old keep cracked down the middle"),
+    ("the Shadow Siege", "Year 402", "the gates held forty days"),
+    ("the Founding", "Year 1", "the first anvil was carried up the pass"),
+    ("the Comet Year", "Year 530", "the well water ran sweet for a season"),
+    ("the Cheese Riots", "Year 611", "the Brannock warehouses burned"),
+    ("the Long Peace", "Year 700", "two generations without a drawn sword"),
+    ("the Ashfall", "Year 745", "the sky stayed grey for a month"),
+    ("the Toll War", "Year 812", "the river crossing changed hands twice"),
+    ("the Silver Harvest", "Year 900", "the cliffs gave more thyme than the boats could carry"),
+]
+
+ORIGIN_PLACE = {"blacksmith": "Karhold", "alchemist": "Brannock", "herbalist": "Merrow Point",
+                "provisioner": "the Brannock caves", "trinket-dealer": "Emberhold"}
+
+LINEAGE = {"Dorn": "third generation at this forge",
+           "Magistra Vool": "second generation of the college, and the last if the budget holds",
+           "Sage Willowbark": "fourth generation on this cottage row",
+           "Hettie": "inn was her grandmother's before it was hers",
+           "Snik": "tenth of his line to work this wagon"}
+
+ADJECTIVES = ["Ancient", "Cursed", "Exalted", "Shimmering", "Blood-Bound", "Void-Touched",
+              "Celestial", "Runic", "Forgotten", "Gilded", "Oathbound", "Storm-Laid"]
+
+_ADJ_MULT = {"Ancient": 1.6, "Cursed": 0.7, "Exalted": 2.2, "Shimmering": 1.3, "Blood-Bound": 1.8,
+             "Void-Touched": 2.5, "Celestial": 2.0, "Runic": 1.5, "Forgotten": 0.8, "Gilded": 1.4,
+             "Oathbound": 1.7, "Storm-Laid": 1.2}
+
+_ADJ_PROP = ["older than the counter it lies on",
+             "shows its making in the right light",
+             "the kind they do not make anymore",
+             "worth every coin twice over"]
+
+
+def _expand_items():
+    rng = random.Random(99)
+    out = {}
+    for trade, items in ITEMS.items():
+        pool = list(items)
+        origin = ORIGIN_PLACE[trade]
+        for name, price, prop, prov in items:
+            for adj in rng.sample(ADJECTIVES, 4):
+                ev, yr, cons = rng.choice(EVENTS)
+                prop2 = prop + ", " + rng.choice(_ADJ_PROP)
+                prov2 = f"{adj.lower()} work out of {origin}, from before {ev} ({yr}) -- {cons}"
+                pool.append((f"{adj} {name}", max(1, round(price * _ADJ_MULT[adj])), prop2, prov2))
+        out[trade] = pool
+    return out
+
+
+EXPANDED_ITEMS = _expand_items()
+
 
 def price_str(p):
     return f"{p} gold"

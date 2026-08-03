@@ -15,7 +15,7 @@ import os
 import random
 import re
 
-from st_world import ITEMS
+from st_world import EXPANDED_ITEMS as ITEMS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NPC = os.path.join(HERE, "..", "data", "npc")

@@ -27,7 +27,8 @@ import json
 import os
 import random
 
-from st_world import ITEMS, PLACES, SHOPKEEPERS
+from st_world import EXPANDED_ITEMS as ITEMS
+from st_world import EVENTS, LINEAGE, ORIGIN_PLACE, PLACES, SHOPKEEPERS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NPC = os.path.join(HERE, "..", "data", "npc")
@@ -77,6 +78,12 @@ NO_STOCK = [
     "Out of that, I am afraid. The shelf does not lie.",
     "Not in stock. I sell what I have, not what I wish I had.",
 ]
+RESTOCK_ASK = [
+    "There is one thing I am short of myself. {item} -- my supplier in {place} has it, and my legs do not. Bring it back and I pay {reward}.",
+    "Since you look like you walk roads: I need {item} from {place}. Fetch it and {reward} is yours, no haggling.",
+    "You want work? {place} holds what I need -- {item}. Return with it and I will make it {reward} for your trouble.",
+]
+
 GOTO_LEAD = [
     "For that you want {place}.",
     "Not here -- but {place} will have it.",
@@ -92,6 +99,39 @@ BUSINESS = [
     "Honestly? {rumor_cap}. You plan around it or you starve.",
     "Fair to middling. {rumor_cap}.",
 ]
+
+
+class World:
+    """Tick-based scarcity: stock depletes with sales and regrows with
+    caravans, and every change leaves a narratable reason the NPC can cite.
+    Adopted from the evolutionary-marathon notebooks, with the random-choice
+    'oracle' parts removed -- stock changes are mechanical, but every
+    conversation-facing decision still comes from the price oracle."""
+
+    def __init__(self, rng):
+        self.rng = rng
+        self.stock = {trade: {i[0]: rng.randint(0, 6) for i in items} for trade, items in ITEMS.items()}
+        self.recent = []
+
+    def tick(self):
+        trade = self.rng.choice(list(self.stock))
+        item = self.rng.choice(list(self.stock[trade]))
+        r = self.rng.random()
+        if r < 0.45 and self.stock[trade][item] > 0:
+            self.stock[trade][item] -= 1
+            if self.stock[trade][item] == 0:
+                keeper = SHOPKEEPERS[trade][0]
+                self.recent.append(f"a traveler bought the last {item} off {keeper} not two days past")
+        elif r >= 0.6:
+            self.stock[trade][item] = min(8, self.stock[trade][item] + 2)
+            self.recent.append(f"a caravan came through with fresh {item}")
+        self.recent = self.recent[-6:]
+
+    def reason_for(self, item_name):
+        for ev in reversed(self.recent):
+            if item_name in ev:
+                return ev
+        return None
 
 
 def price_str(p):
@@ -152,7 +192,7 @@ def convo_sale(rng, shop, keeper, desc, stock, demand):
     return "\n".join(lines) + "\n"
 
 
-def convo_missing(rng, shop, keeper, desc, stock, demand):
+def convo_missing(rng, shop, keeper, desc, stock, demand, world=None):
     have = {i[0] for i, q in stock.items() if q > 0}
     missing = [i for s in ITEMS.values() for i in s if i[0] not in have]
     if not missing:
@@ -160,10 +200,15 @@ def convo_missing(rng, shop, keeper, desc, stock, demand):
     want = rng.choice(missing)
     holders = [trade for trade, items in ITEMS.items() if any(i[0] == want[0] for i in items)]
     keeper_trade = KEEPER_TRADE[keeper]
+    reason = world.reason_for(want[0]) if world else None
+    if reason:
+        no_stock_line = f"That I do not have, not today -- {reason}."
+    else:
+        no_stock_line = rng.choice(NO_STOCK)
     lines = card_lines(keeper, desc, f"{keeper}'s shop, the day's trade underway.")
     lines += [f"{keeper}: Welcome. Mind the step.",
               f"Player: Do you have {want[0]}?",
-              f"{keeper}: {rng.choice(NO_STOCK)}"]
+              f"{keeper}: {no_stock_line}"]
     real = [t for t in holders if t != keeper_trade]
     if real and rng.random() < 0.8:
         place = rng.choice([p[0] for p in PLACES])
@@ -175,9 +220,31 @@ def convo_missing(rng, shop, keeper, desc, stock, demand):
     return "\n".join(lines) + "\n"
 
 
+def convo_restock(rng, shop, keeper, desc, world):
+    empty = [name for name, q in world.stock[shop].items() if q == 0]
+    if not empty:
+        return None
+    want = rng.choice(empty)
+    place = ORIGIN_PLACE[shop]
+    fair = next(i[1] for i in ITEMS[shop] if i[0] == want)
+    reward = round(fair * 1.3)
+    ask = rng.choice(RESTOCK_ASK).format(item=want, place=place, reward=price_str(reward))
+    lines = card_lines(keeper, desc, f"{keeper}'s shop, shelves thin this week.")
+    lines += [f"{keeper}: Welcome. Mind the empty shelf, the week has been long.",
+              "Player: Do you have a quest for me?",
+              f"{keeper}: {ask}",
+              "Player: Where do I find it?",
+              f"{keeper}: {rng.choice(GOTO_LEAD).format(place=place)} The keeper there knows my name.",
+              f"[GOTO: {place}]"]
+    return "\n".join(lines) + "\n"
+
+
 def convo_business(rng, keeper, desc, rumor):
+    greet = "Day to you. Mind the step."
+    if rng.random() < 0.25 and keeper in LINEAGE:
+        greet = f"Day to you. {LINEAGE[keeper].capitalize()}, for what that is worth."
     lines = card_lines(keeper, desc, f"{keeper}'s shop, between customers.")
-    lines += [f"{keeper}: Day to you. Mind the step.",
+    lines += [f"{keeper}: {greet}",
               "Player: How's business?",
               f"{keeper}: {rng.choice(BUSINESS).format(rumor_cap=rumor[0].upper() + rumor[1:])}"]
     return "\n".join(lines) + "\n"
@@ -195,17 +262,22 @@ def main():
 
     out, scenarios = [], []
     n_target = args.scenarios if args.scenarios else args.rows
+    world = World(rng)
     for _ in range(n_target):
+        for _ in range(3):
+            world.tick()
         shop = rng.choice(list(ITEMS))
         keeper, desc = SHOPKEEPERS[shop]
-        stock = {i[0]: rng.randint(0, 6) for i in ITEMS[shop]}
+        stock = world.stock[shop]
         demand = rng.uniform(0.8, 1.6)
-        rumor = rng.choice(RUMORS)
+        rumor = world.recent[-1] if world.recent and rng.random() < 0.7 else rng.choice(RUMORS)
         r = rng.random()
-        if r < 0.5:
+        if r < 0.42:
             c = convo_sale(rng, shop, keeper, desc, stock, demand)
-        elif r < 0.8:
-            c = convo_missing(rng, shop, keeper, desc, stock, demand)
+        elif r < 0.68:
+            c = convo_missing(rng, shop, keeper, desc, stock, demand, world)
+        elif r < 0.82:
+            c = convo_restock(rng, shop, keeper, desc, world)
         else:
             c = convo_business(rng, keeper, desc, rumor)
         if c is None:

@@ -25,7 +25,8 @@ from tokenizers import Tokenizer
 
 from model import Config, TinyLM
 from npc_score import ACTION_RE, oracle_ok, parse_action
-from st_world import ITEMS, PLACES
+from st_world import EXPANDED_ITEMS as ITEMS
+from st_world import PLACES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
