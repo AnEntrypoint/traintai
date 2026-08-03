@@ -53,6 +53,11 @@ def main():
     grpo_ckpt = os.path.join(RUNS, f"ple-{args.tag}-grpo.pt")
 
     if not args.skip_prepare:
+        bins = os.path.join(HERE, "..", "data", "train_v32768.bin")
+        if not os.path.exists(bins):
+            if run_stage("tokens", ["../data/prepare.py", "--vocab", "32768"],
+                         os.path.join(RUNS, f"{args.tag}-tokens.log")):
+                return
         if run_stage("prepare", ["st_prepare.py"], os.path.join(RUNS, f"{args.tag}-prepare.log")):
             return
     rc = run_stage("sft", ["train.py", "--arm", "ple", "--vocab", "32768", "--d-model", "96",
