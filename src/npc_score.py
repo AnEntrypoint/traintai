@@ -68,7 +68,7 @@ def ngram_repeat(text, n=3, max_count=2):
     return grams.most_common(1)[0][1] > max_count
 
 
-ACTION_RE = re.compile(r"^\[(GOTO|DEAL): (.+)\]$")
+ACTION_RE = re.compile(r"^\[(GOTO|DEAL|BUY): (.+)\]$")
 
 
 def parse_action(line):
@@ -80,7 +80,7 @@ def parse_action(line):
         return ("GOTO", rest.strip(), None)
     parts = rest.rsplit(" ", 1)
     if len(parts) == 2 and parts[1].isdigit():
-        return ("DEAL", parts[0].strip(), int(parts[1]))
+        return (verb, parts[0].strip(), int(parts[1]))
     return None
 
 

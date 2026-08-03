@@ -49,6 +49,7 @@ def main():
     args.prev = os.path.abspath(args.prev)
 
     sft_ckpt = os.path.join(RUNS, f"ple-{args.tag}-s0.pt")
+    best_ckpt = os.path.join(RUNS, f"ple-{args.tag}-s0-best.pt")
     grpo_ckpt = os.path.join(RUNS, f"ple-{args.tag}-grpo.pt")
 
     if not args.skip_prepare:

@@ -168,6 +168,7 @@ def main():
 
         if step % args.eval_every == 0 or step == args.steps - 1:
             vl = evaluate(model, val_b, args.eval_iters)
+            improved = vl < best
             best = min(best, vl)
             tok = (step + 1) * args.batch_size * args.seq_len
             history.append({"step": step, "tokens": tok, "train": loss.item(), "val": vl})
@@ -176,6 +177,9 @@ def main():
                 f"| val {vl:.4f} | ppl {math.exp(vl):7.2f} | {time.time() - t0:5.0f}s",
                 flush=True,
             )
+            if improved:
+                torch.save({"cfg": cfg.__dict__, "state": model.state_dict()},
+                           os.path.join(RUNS, f"{name}-best.pt"))
             torch.save({"cfg": cfg.__dict__, "state": model.state_dict()},
                        os.path.join(RUNS, f"{name}-latest.pt"))
 

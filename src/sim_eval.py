@@ -72,7 +72,7 @@ def main():
 
     n = fmt = beats = acts = invalid = oracle_hits = 0
     price_n = price_ok = 0
-    by_kind = {"none": [0, 0], "GOTO": [0, 0], "DEAL": [0, 0]}
+    by_kind = {"none": [0, 0], "GOTO": [0, 0], "DEAL": [0, 0], "BUY": [0, 0]}
     samples = []
     for s in scenarios:
         ids = torch.tensor([tok.encode(s["prompt"]).ids], device=device)
@@ -103,9 +103,9 @@ def main():
                 invalid += 1
             elif action[0] == "GOTO" and action[1] not in PLACE_NAMES:
                 invalid += 1
-            elif action[0] == "DEAL" and action[1] not in ITEM_NAMES:
+            elif action[0] in ("DEAL", "BUY") and action[1] not in ITEM_NAMES:
                 invalid += 1
-        kind = "none" if oracle is None else ("GOTO" if oracle.startswith("[GOTO") else "DEAL")
+        kind = "none" if oracle is None else ("GOTO" if oracle.startswith("[GOTO") else ("BUY" if oracle.startswith("[BUY") else "DEAL"))
         ok = oracle_ok(oracle, action)
         by_kind[kind][0] += ok
         by_kind[kind][1] += 1

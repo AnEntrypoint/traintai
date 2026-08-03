@@ -186,7 +186,7 @@ def reward_of(text, stopped, q, bio, oracle=None):
             r -= 1.0
         elif act[0] == "GOTO" and act[1] not in PLACE_NAMES:
             r -= 1.0
-        elif act[0] == "DEAL" and act[1].lower() not in bio.lower():
+        elif act[0] in ("DEAL", "BUY") and act[1].lower() not in bio.lower():
             r -= 1.0
         else:
             r -= 0.3

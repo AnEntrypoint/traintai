@@ -202,3 +202,25 @@ scaling markup and haggle floor (masters refuse harder, 84 level-flavored
 declines), and apprentice/lineage texture. Rejected: the DNA-selection/
 extinction framing -- fitness curves are sim-for-sim's-sake; this sim
 exists to label good dialog decisions.
+
+## Anti-overfit + gameplay expansion (2026-08-03)
+
+Data audit: real rows were 3.7K vs 47K synthetic (real ~24% of bins) and
+the forge flywheel had become the second-largest component -- a
+self-distillation risk. Measures taken:
+
+- PIPPA (PygmalionAI, apache-2.0) pulled and converted: 1457 real RP
+  conversations (beat-stripped at prepare) + 74 held out in
+  pippa_holdout.jsonl, which NEVER enters the bins -- it is the real-data
+  generalization gate.
+- Forge rows capped at 2500 in st_prepare (self-distillation limit).
+- Best-val checkpointing in train.py (ple-<tag>-s0-best.pt on every val
+  improvement); round.py's GRPO stage can consume best over latest.
+- Gameplay verbs now three: [DEAL] (NPC sells), [BUY] (NPC buys the
+  player's item -- 454 convos), [GOTO] (travel). Quest turn-ins (188
+  convos) close the restock loop: contract -> player returns with item ->
+  reward. [BUY] validity requires the item in the card's "You carry:"
+  context. parse_action/oracle_ok/sim_eval updated; eval splits BUY
+  separately.
+- HF token discipline: the token used for the pull is exposed (public
+  gist history + chat) and must be rotated; it was never written to disk.

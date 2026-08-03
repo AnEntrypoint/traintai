@@ -84,6 +84,22 @@ RESTOCK_ASK = [
     "You want work? {place} holds what I need -- {item}. Return with it and I will make it {reward} for your trouble.",
 ]
 
+BUY_ACCEPT = [
+    "That I can use. {price}, and it leaves my shelf slower than it arrived.",
+    "A fair find. {price} for it, and no hard feelings.",
+    "I will take it off your hands for {price}.",
+]
+BUY_DECLINE = [
+    "Not for my shelf, friend. Try a trader with deeper pockets.",
+    "No call for that here -- I sell what I know.",
+    "Pass. I buy what I can sell, and that I cannot.",
+]
+TURNIN_ACCEPT = [
+    "You actually came back. {reward}, as agreed -- good roads to you.",
+    "Ha! There is honesty left on the road. {reward}, every coin of it earned.",
+    "Well struck. {reward} as promised, and the shelf thanks you.",
+]
+
 GOTO_LEAD = [
     "For that you want {place}.",
     "Not here -- but {place} will have it.",
@@ -269,6 +285,42 @@ def convo_restock(rng, shop, keeper, desc, world):
     return "\n".join(lines) + "\n"
 
 
+def convo_player_sell(rng, shop, keeper, desc, world):
+    pool = [i for items in ITEMS.values() for i in items]
+    item = rng.choice(pool)
+    have = world.stock[shop].get(item[0], 0)
+    carry = f"You carry: {item[0]}."
+    lines = card_lines(keeper, desc, f"{keeper}'s shop, the day's trade underway. {carry}")
+    offer = round(item[1] * 0.6)
+    if have <= 5 and rng.random() < 0.85:
+        a = rng.choice(BUY_ACCEPT).format(item=item[0], price=price_str(offer))
+        action = f"[BUY: {item[0]} {offer}]"
+    else:
+        a = rng.choice(BUY_DECLINE).format(item=item[0])
+        action = None
+    lines += [f"{keeper}: Welcome. Mind the step.",
+              f"Player: Would you buy this {item[0]}?",
+              f"{keeper}: {a}"]
+    if action:
+        lines.append(action)
+    return "\n".join(lines) + "\n"
+
+
+def convo_turnin(rng, shop, keeper, desc, world):
+    empty = [name for name, q in world.stock[shop].items() if q == 0]
+    if not empty:
+        return None
+    want = rng.choice(empty)
+    fair = next(i[1] for i in ITEMS[shop] if i[0] == want)
+    reward = round(fair * 1.3)
+    lines = card_lines(keeper, desc, f"{keeper}'s shop; you carry: {want}.")
+    lines += [f"{keeper}: Back already? The road was kind, then.",
+              f"Player: I have the {want} you asked for.",
+              f"{keeper}: {rng.choice(TURNIN_ACCEPT).format(reward=price_str(reward))}",
+              f"[BUY: {want} {reward}]"]
+    return "\n".join(lines) + "\n"
+
+
 def convo_business(rng, keeper, desc, rumor):
     greet = "Day to you. Mind the step."
     if rng.random() < 0.25 and keeper in LINEAGE:
@@ -302,12 +354,16 @@ def main():
         demand = world.demand_of(shop, rng.uniform(0.8, 1.6))
         rumor = world.recent[-1] if world.recent and rng.random() < 0.7 else rng.choice(RUMORS)
         r = rng.random()
-        if r < 0.42:
+        if r < 0.38:
             c = convo_sale(rng, shop, keeper, desc, stock, demand, world.level[shop])
-        elif r < 0.68:
+        elif r < 0.60:
             c = convo_missing(rng, shop, keeper, desc, stock, demand, world)
-        elif r < 0.82:
+        elif r < 0.72:
             c = convo_restock(rng, shop, keeper, desc, world)
+        elif r < 0.84:
+            c = convo_player_sell(rng, shop, keeper, desc, world)
+        elif r < 0.92:
+            c = convo_turnin(rng, shop, keeper, desc, world)
         else:
             c = convo_business(rng, keeper, desc, rumor)
         if c is None:

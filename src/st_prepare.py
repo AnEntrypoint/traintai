@@ -2,19 +2,20 @@
 
 Mixture (interleaved, anti-overfit by construction):
   - chimbiwide real roleplay conversations, re-rendered to name-prefix ST
+  - PIPPA real roleplay (apache-2.0, PygmalionAI), converted and beat-stripped
   - authored exemplars (st_authored*.jsonl, all ST features covered)
   - world-DB grounded conversations (st_world.jsonl: items, quests, places)
   - economy-sim oracle conversations (st_sim.jsonl: DEAL/GOTO decisions,
     abstention cases, dialog-only)
-  - forge rejection-sampled rollouts (st_forge_data.jsonl, the co-evolution
-    loop's injection stage)
+  - forge rejection-sampled rollouts, CAPPED (self-distillation limit)
   - a capped combinatorial-template subset from st_data.py output (~15%)
   - a TinyStories token slice (~20%) so the model keeps general coherence
 
 All sources pass a decontamination filter (TOXIC substrings: the old fixed
 template and second-person meta-narrative seams) and have *action beats*
 stripped from response lines (dialog-only output target) before
-tokenization.
+tokenization. data/npc/pippa_holdout.jsonl is NEVER included -- it is the
+real-data generalization gate.
 
 Output: data/train_npc.bin + data/val_npc.bin (uint16 + eot).
 """
@@ -31,6 +32,7 @@ DATA = os.path.join(HERE, "..", "data")
 NPC = os.path.join(DATA, "npc")
 TOK = os.path.join(DATA, "bpe32768.json")
 TEMPLATE_CAP = 6000
+FORGE_CAP = 2500
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -141,6 +143,14 @@ def main():
                 texts.append(row["text"])
                 n_sim += 1
 
+    n_pippa = 0
+    pippa_path = os.path.join(NPC, "pippa_st.jsonl")
+    if os.path.exists(pippa_path):
+        for row in read_jsonl(pippa_path):
+            if clean(row["text"]):
+                texts.append(strip_beats(row["text"]))
+                n_pippa += 1
+
     n_forge = 0
     forge_path = os.path.join(NPC, "st_forge_data.jsonl")
     if os.path.exists(forge_path):
@@ -148,10 +158,12 @@ def main():
             if clean(row["text"]):
                 texts.append(strip_beats(row["text"]))
                 n_forge += 1
+                if n_forge >= FORGE_CAP:
+                    break
 
     tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
     texts.extend(tmpl[:TEMPLATE_CAP])
-    print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | forge {n_forge} | template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
+    print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | forge {n_forge} | template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
     ids = []
     for i, enc in enumerate(encode(texts)):
