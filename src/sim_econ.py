@@ -102,30 +102,55 @@ BUSINESS = [
 
 
 class World:
-    """Tick-based scarcity: stock depletes with sales and regrows with
-    caravans, and every change leaves a narratable reason the NPC can cite.
-    Adopted from the evolutionary-marathon notebooks, with the random-choice
-    'oracle' parts removed -- stock changes are mechanical, but every
-    conversation-facing decision still comes from the price oracle."""
+    """Tick-based scarcity plus production and price shocks, adopted from
+    the evolutionary-sim research: stock depletes with sales, regrows via
+    keeper production (gather -> materials -> craft) and caravans, and
+    demand shocks move the oracle price AND the right choice (sell fast
+    into a crash, hold firm through a spike). Every change leaves a
+    narratable reason. The DNA-selection/extinction framing from those
+    notebooks is deliberately not adopted -- this sim exists to label
+    good dialog decisions, not to evolve agents."""
 
     def __init__(self, rng):
         self.rng = rng
         self.stock = {trade: {i[0]: rng.randint(0, 6) for i in items} for trade, items in ITEMS.items()}
+        self.materials = {trade: rng.randint(0, 120) for trade in ITEMS}
+        self.level = {trade: rng.randint(2, 9) for trade in ITEMS}
+        self.shock = {}  # trade -> (multiplier, reason)
         self.recent = []
 
     def tick(self):
         trade = self.rng.choice(list(self.stock))
         item = self.rng.choice(list(self.stock[trade]))
         r = self.rng.random()
-        if r < 0.45 and self.stock[trade][item] > 0:
+        if r < 0.40 and self.stock[trade][item] > 0:
             self.stock[trade][item] -= 1
             if self.stock[trade][item] == 0:
                 keeper = SHOPKEEPERS[trade][0]
                 self.recent.append(f"a traveler bought the last {item} off {keeper} not two days past")
-        elif r >= 0.6:
+        elif r < 0.55:
+            self.materials[trade] += 20 + 5 * self.level[trade]
+        elif r < 0.75 and self.materials[trade] >= 60:
+            self.materials[trade] -= 60
+            self.stock[trade][item] = min(8, self.stock[trade][item] + 2)
+            self.recent.append(f"a fresh batch of {item} came off the bench this morning")
+        elif r < 0.85:
             self.stock[trade][item] = min(8, self.stock[trade][item] + 2)
             self.recent.append(f"a caravan came through with fresh {item}")
+        elif r < 0.92 and trade not in self.shock:
+            if self.rng.random() < 0.5:
+                self.shock[trade] = (0.6, f"the market for {trade} wares collapsed last week")
+                self.recent.append(f"the market for {trade} wares collapsed last week -- half price and glad of it")
+            else:
+                self.shock[trade] = (1.6, f"every buyer on the road suddenly wants {trade} wares")
+                self.recent.append(f"every buyer on the road suddenly wants {trade} wares")
+        elif trade in self.shock and r >= 0.98:
+            self.shock.pop(trade)
         self.recent = self.recent[-6:]
+
+    def demand_of(self, trade, base):
+        mult, _ = self.shock.get(trade, (1.0, None))
+        return base * mult
 
     def reason_for(self, item_name):
         for ev in reversed(self.recent):
@@ -151,16 +176,18 @@ def card_lines(keeper, desc, scen):
             f"Scenario: {scen}", "<START>"]
 
 
-def convo_sale(rng, shop, keeper, desc, stock, demand):
+def convo_sale(rng, shop, keeper, desc, stock, demand, level=5):
     avail = [i for i in ITEMS[shop] if stock.get(i[0], 0) > 0]
     if not avail:
         return None
     star = rng.choice(avail)
     others = [i for i in avail if i is not star]
-    price = round(star[1] * demand * MARKUP[keeper])
+    markup = MARKUP[keeper] * (1 + 0.03 * (level - 5))
+    floor_mult = min(0.97, FLOOR + 0.01 * level)
+    price = round(star[1] * demand * markup)
     q2, a2 = None, None
     if others and rng.random() < 0.6:
-        listline = rng.choice(STOCK_LIST).format(list2=list2([star, others[0]], demand, MARKUP[keeper]))
+        listline = rng.choice(STOCK_LIST).format(list2=list2([star, others[0]], demand, markup))
     else:
         listline = rng.choice(QUOTE).format(item=star[0], price=price_str(price),
                                             detail=star[2], detail_cap=star[2].capitalize())
@@ -168,15 +195,18 @@ def convo_sale(rng, shop, keeper, desc, stock, demand):
     if kind < 0.45:
         q2, a2 = f"Player: I'll take the {star[0]}.", (rng.choice(ACCEPT), f"[DEAL: {star[0]} {price}]")
     elif kind < 0.75:
-        floor = round(star[1] * demand * FLOOR * MARKUP[keeper])
+        floor = round(star[1] * demand * floor_mult * markup)
         offer = round(price * rng.uniform(0.5, 0.8))
         if rng.random() < 0.5 and offer >= floor:
             q2, a2 = (f"Player: {price_str(offer)}, final offer.",
                       (rng.choice(HAGGLE_OK).format(price=price_str(offer), floor=price_str(floor)),
                        f"[DEAL: {star[0]} {offer}]"))
         else:
-            q2, a2 = (f"Player: How about {price_str(offer)}?",
-                      (rng.choice(DECLINE_HAGGLE).format(floor=price_str(floor), price=price_str(price)), None))
+            if level >= 7:
+                decline = f"I have priced {shop} work longer than you have been on the road. {price_str(price)}, and it does not move."
+            else:
+                decline = rng.choice(DECLINE_HAGGLE).format(floor=price_str(floor), price=price_str(price))
+            q2, a2 = (f"Player: How about {price_str(offer)}?", (decline, None))
     else:
         q2 = f"Player: Tell me about the {star[0]}."
         a2 = (f"{star[3].capitalize()}. That is the honest of it, and it costs me nothing to tell. "
@@ -269,11 +299,11 @@ def main():
         shop = rng.choice(list(ITEMS))
         keeper, desc = SHOPKEEPERS[shop]
         stock = world.stock[shop]
-        demand = rng.uniform(0.8, 1.6)
+        demand = world.demand_of(shop, rng.uniform(0.8, 1.6))
         rumor = world.recent[-1] if world.recent and rng.random() < 0.7 else rng.choice(RUMORS)
         r = rng.random()
         if r < 0.42:
-            c = convo_sale(rng, shop, keeper, desc, stock, demand)
+            c = convo_sale(rng, shop, keeper, desc, stock, demand, world.level[shop])
         elif r < 0.68:
             c = convo_missing(rng, shop, keeper, desc, stock, demand, world)
         elif r < 0.82:

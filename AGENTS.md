@@ -191,3 +191,14 @@ quoted prices in DEAL scenarios land within 30% of the oracle price.
 - Rejected: fixed [TRADE:50] templates, random-choice oracles, fake sprint
   marathons, mana/combat scope creep. Deep spatial/territory sim is a
   future lever if dialog geography ever needs it.
+
+## Evolutionary-sim research adoption (2026-08-03)
+
+From the third notebook (skill-tree/crafting evolutionary sim): adopted
+crafting-chain restocks (gather -> materials -> bench production, 161
+conversations cite it), volatility price shocks that move the oracle price
+AND the right choice (crash: sell fast; spike: hold firm), keeper levels
+scaling markup and haggle floor (masters refuse harder, 84 level-flavored
+declines), and apprentice/lineage texture. Rejected: the DNA-selection/
+extinction framing -- fitness curves are sim-for-sim's-sake; this sim
+exists to label good dialog decisions.
