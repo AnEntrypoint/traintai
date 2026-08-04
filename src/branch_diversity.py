@@ -70,28 +70,26 @@ def load_checkpoint(ckpt_path, device):
     return model
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("ckpts", nargs="+", help="two or more checkpoint paths to compare")
-    ap.add_argument("--tokens", type=int, default=48)
-    args = ap.parse_args()
-
-    if len(args.ckpts) < 2:
-        raise SystemExit("need at least 2 checkpoints to measure diversity between")
-
-    device = get_device()
-    tok = Tokenizer.from_file(os.path.join(DATA, "bpe32768.json"))
+def measure_diversity(ckpt_paths, device=None, tok=None, tokens=48):
+    """Reusable core: returns (pair_divergence dict, mean_divergence
+    float) for 2+ checkpoint paths. Importable by round.py's generation
+    loop so collapse detection runs automatically every generation, not
+    only via the standalone CLI. Keyed by index, not basename -- two
+    different checkpoint PATHS can share a basename in different runs/
+    subdirs, and comparing the same path against itself (a legitimate
+    sanity check) must not silently collapse to one dict entry and
+    divide by zero pairs."""
+    if len(ckpt_paths) < 2:
+        raise ValueError("need at least 2 checkpoints to measure diversity between")
+    device = device or get_device()
+    tok = tok or Tokenizer.from_file(os.path.join(DATA, "bpe32768.json"))
     probes = build_probes()
 
-    # Keyed by index, not basename -- two different checkpoint PATHS can
-    # share a basename in different runs/ subdirs, and comparing the same
-    # path against itself (a legitimate sanity check) must not silently
-    # collapse to one dict entry and divide by zero pairs.
-    names = [f"{i}:{os.path.basename(p)}" for i, p in enumerate(args.ckpts)]
+    names = [f"{i}:{os.path.basename(p)}" for i, p in enumerate(ckpt_paths)]
     completions = {}
-    for name, path in zip(names, args.ckpts):
+    for name, path in zip(names, ckpt_paths):
         model = load_checkpoint(path, device)
-        completions[name] = [greedy_complete(model, tok, p, args.tokens, device) for p in probes]
+        completions[name] = [greedy_complete(model, tok, p, tokens, device) for p in probes]
         del model
 
     pair_divergence = {}
@@ -102,7 +100,20 @@ def main():
             pair_divergence[(a, b)] = diffs / len(probes)
 
     mean_divergence = sum(pair_divergence.values()) / len(pair_divergence)
-    print(f"=== branch diversity ({len(names)} checkpoints, {N_PROBES} fixed probes, greedy decode) ===")
+    return pair_divergence, mean_divergence
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ckpts", nargs="+", help="two or more checkpoint paths to compare")
+    ap.add_argument("--tokens", type=int, default=48)
+    args = ap.parse_args()
+
+    if len(args.ckpts) < 2:
+        raise SystemExit("need at least 2 checkpoints to measure diversity between")
+
+    pair_divergence, mean_divergence = measure_diversity(args.ckpts, tokens=args.tokens)
+    print(f"=== branch diversity ({len(args.ckpts)} checkpoints, {N_PROBES} fixed probes, greedy decode) ===")
     for (a, b), d in sorted(pair_divergence.items(), key=lambda kv: kv[1]):
         print(f"  {a} vs {b}: {d:.0%} of probes diverge")
     print(f"mean pairwise divergence: {mean_divergence:.0%}")

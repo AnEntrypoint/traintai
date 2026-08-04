@@ -231,6 +231,7 @@ def run_generation(gen_idx, base_tag, prev, n_branches, steps, grpo_steps,
         print(f"  #{rank} {r['tag']}: forge {r['forge_pass_rate']}% | oracle_match {r['oracle_match_rate']}% | {r['ckpt']}")
 
     pool = ranked[:PROMOTE_TOP_K]
+    check_generation_diversity(pool)
     promoted = rng.choice(pool)
     best = ranked[0]
     if best["forge_pass_rate"] is not None and best["forge_pass_rate"] <= SHIP_FLOOR:
@@ -242,6 +243,35 @@ def run_generation(gen_idx, base_tag, prev, n_branches, steps, grpo_steps,
         print(f"\nPromoted (top-{PROMOTE_TOP_K} random pick, not always the leader, for diversity): "
               f"{promoted['tag']} (forge {promoted['forge_pass_rate']}%)")
     return ranked, promoted
+
+
+def check_generation_diversity(pool):
+    """Real measured behavioral-distance check (branch_diversity.py) on
+    the top-PROMOTE_TOP_K checkpoints -- the actual candidates promotion
+    picks from. Best-effort: import/measurement failures print a warning
+    and let the generation loop continue rather than blocking an
+    unattended multi-hour run on a diagnostic step. A collapse warning is
+    informational, printed into the same log every generation already
+    produces -- it does not itself change anything about this generation
+    (round.py's per-branch --seed spread and top-K-random promotion are
+    already the mitigations; this is the measurement that would tell a
+    future session/human whether they're working)."""
+    if len(pool) < 2:
+        return
+    try:
+        import branch_diversity
+        ckpts = [r["ckpt"] for r in pool if os.path.exists(r["ckpt"])]
+        if len(ckpts) < 2:
+            print("diversity check skipped: fewer than 2 promotable checkpoints exist on disk")
+            return
+        _, mean_divergence = branch_diversity.measure_diversity(ckpts)
+        print(f"\nbranch diversity (top-{len(ckpts)} promotable checkpoints): "
+              f"{mean_divergence:.0%} mean pairwise divergence")
+        if mean_divergence < 0.05:
+            print("COLLAPSE WARNING: this generation's top branches are near-identical despite "
+                  "distinct SFT seeds -- see branch_diversity.py for the same check run standalone.")
+    except Exception as e:
+        print(f"diversity check failed (non-fatal, continuing): {e}")
 
 
 def append_agents_md_entry(gen_idx, base_tag, ranked, promoted):
