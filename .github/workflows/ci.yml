@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install torch_xla  # pulls its matched torch from PyPI
+      - run: pip install torch==2.9.0 torch_xla==2.9.0  # matched pair; torch_xla's wheel does not pull torch
       - name: XLA device-path witness
         run: |
           TRAINTAI_DEVICE=xla python - <<'EOF'
