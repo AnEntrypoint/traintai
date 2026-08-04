@@ -87,7 +87,8 @@ def check_tag_collision(tag):
 
 
 def run_one_round(tag, prev, steps, grpo_steps, skip_prepare, skip_action_forge,
-                   action_forge_scenarios, sft_seed=None):
+                   action_forge_scenarios, sft_seed=None, skip_tournament=False,
+                   tournament_roster=8, tournament_ticks=8, tournament_k=4):
     """Runs stages 1-6 for a single tag/lineage. Returns a dict with the
     checkpoint path and, if forge/simeval produced parseable numbers, the
     measured fitness fields -- or None if the round failed before
@@ -107,6 +108,18 @@ def run_one_round(tag, prev, steps, grpo_steps, skip_prepare, skip_action_forge,
             run_stage("actionforge", ["npc_action_forge.py", prev,
                                        "--scenarios", str(action_forge_scenarios)],
                        os.path.join(RUNS, f"{tag}-actionforge.log"))
+        if not skip_tournament:
+            # Survival-sim tournament self-play (sim_tournament.py) --
+            # composes with this pipeline the same way actionforge does:
+            # a pre-prepare data-generation pass writing st_survival.jsonl,
+            # which st_prepare.py's mixture already reads if present. Not
+            # a fork of round.py's own stage sequence -- one more source
+            # feeding the same prepare step every other source uses.
+            run_stage("tournament", ["sim_tournament.py", prev,
+                                      "--roster", str(tournament_roster),
+                                      "--ticks", str(tournament_ticks),
+                                      "--k", str(tournament_k)],
+                       os.path.join(RUNS, f"{tag}-tournament.log"))
         if run_stage("prepare", ["st_prepare.py"], os.path.join(RUNS, f"{tag}-prepare.log")):
             return None
 
@@ -186,7 +199,8 @@ SHIP_FLOOR = 74     # AGENTS.md's r16 ship baseline; a generation whose best doe
 
 
 def run_generation(gen_idx, base_tag, prev, n_branches, steps, grpo_steps,
-                    skip_prepare, skip_action_forge, action_forge_scenarios, rng):
+                    skip_prepare, skip_action_forge, action_forge_scenarios, rng,
+                    skip_tournament=False):
     """Runs one generation's N branches sequentially from `prev`, ranks
     them, and returns (ranked_results, promoted_result_or_None).
     Promotion picks randomly among the top PROMOTE_TOP_K ranked branches
@@ -201,7 +215,8 @@ def run_generation(gen_idx, base_tag, prev, n_branches, steps, grpo_steps,
         print(f"\n--- branch {i + 1}/{n_branches}: {branch_tag} ---", flush=True)
         r = run_one_round(branch_tag, prev, steps, grpo_steps,
                            skip_prepare, skip_action_forge,
-                           action_forge_scenarios, sft_seed=1000 + gen_idx * 100 + i)
+                           action_forge_scenarios, sft_seed=1000 + gen_idx * 100 + i,
+                           skip_tournament=skip_tournament)
         results.append(r)
         if r:
             print_round_summary(branch_tag)
@@ -260,6 +275,8 @@ def main():
     ap.add_argument("--skip-action-forge", action="store_true",
                      help="skip rejection-sampling oracle-matching actions from --prev before prepare")
     ap.add_argument("--action-forge-scenarios", type=int, default=800)
+    ap.add_argument("--skip-tournament", action="store_true",
+                     help="skip the sim_tournament.py survival-sim self-play data pass before prepare")
     ap.add_argument("--branches", type=int, default=1,
                      help="run N divergent branches from --prev sequentially instead of one linear round")
     ap.add_argument("--generations", type=int, default=1,
@@ -273,7 +290,8 @@ def main():
     if args.branches <= 1:
         result = run_one_round(args.tag, args.prev, args.steps, args.grpo_steps,
                                 args.skip_prepare, args.skip_action_forge,
-                                args.action_forge_scenarios)
+                                args.action_forge_scenarios,
+                                skip_tournament=args.skip_tournament)
         if result:
             print_round_summary(args.tag)
         return
@@ -287,7 +305,8 @@ def main():
         ranked, promoted = run_generation(gen_idx, args.tag, prev, args.branches,
                                            args.steps, args.grpo_steps,
                                            args.skip_prepare, args.skip_action_forge,
-                                           args.action_forge_scenarios, rng)
+                                           args.action_forge_scenarios, rng,
+                                           skip_tournament=args.skip_tournament)
         append_agents_md_entry(gen_idx, args.tag, ranked, promoted)
         if promoted is None:
             print("\nStopping: no branch produced a valid checkpoint this generation.")

@@ -252,9 +252,18 @@ def run_tournament(model, tok, branches, horizon, tokens, device):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ckpt")
-    ap.add_argument("--roster", type=int, default=8)
-    ap.add_argument("--ticks", type=int, default=8, help="horizon per branch")
-    ap.add_argument("--k", type=int, default=4, help="rollout variants per agent")
+    # Sized for real throughput, not fast local iteration: this session
+    # measured 32 branches (roster=8,k=4) x 8 ticks completing in ~51s on
+    # an RTX 3060 Laptop (comparable tier to Kaggle's T4, not verified
+    # identical) via batched lockstep generation -- these defaults are
+    # ~4x that workload (roster=16,k=6 = 96 branches x 16 ticks), meant
+    # to be re-measured on a real Kaggle T4 run and adjusted from there,
+    # not treated as final. This is a tiny 29M-param model; the GPU-hour
+    # budget (30hr/week per the confirmed Kaggle quota) is the real
+    # governor via round.py's --hours flag, not per-branch cost alone.
+    ap.add_argument("--roster", type=int, default=16)
+    ap.add_argument("--ticks", type=int, default=16, help="horizon per branch")
+    ap.add_argument("--k", type=int, default=6, help="rollout variants per agent")
     ap.add_argument("--keep-frac", type=float, default=0.25)
     ap.add_argument("--tokens", type=int, default=80)
     ap.add_argument("--seed", type=int, default=97)
