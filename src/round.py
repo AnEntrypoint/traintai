@@ -21,14 +21,30 @@ measured RAM discipline below (two concurrent torch jobs have crashed
 this box twice; branching multiplies that risk by N if run in parallel,
 so it does not). After all N branches complete, compares them by a real
 measured fitness metric (forge pass rate, tie-broken by sim_eval oracle
-match) -- never a judged/simulated score -- and prints a ranked summary;
-it does NOT auto-promote a "winner" checkpoint anywhere, since AGENTS.md's
-ship status is a human-reviewed decision recorded in this file, not an
-automated overwrite.
+match) -- never a judged/simulated score.
 
-Lineage tags: branched runs are named <tag>-b<N> (e.g. st-r25-b0,
-st-r25-b1), verified disjoint from every existing runs/*.pt filename
-pattern (plain st-rN tags never contain "-b", so no collision is
+Autonomous multi-generation mode (--generations N and/or --hours H, with
+--branches > 1): after each generation's branches are ranked, AUTO-
+PROMOTES a winner as the next generation's --prev and keeps going --
+genuinely unattended operation, per user direction ("hours of training
+without needing a human in the loop"). Promotion is diversity-aware, not
+always-the-single-leader: with --promote-strategy top-k-random (default),
+the next --prev is drawn randomly from the top PROMOTE_TOP_K branches
+(not always rank #1), so repeated generations don't collapse onto one
+lineage's local optimum. A generation whose best branch is a NULL RESULT
+(does not beat the running best-ever forge score) still promotes that
+generation's best branch forward (training must continue for hours
+unattended; a human is not there to intervene), but is marked
+NON-IMPROVING in the auto-appended AGENTS.md entry so the record stays
+honest even though nothing paused to ask about it. Stops after
+--generations generations, or when --hours wall-clock is exceeded,
+whichever comes first; with neither flag set, --branches > 1 runs
+exactly one generation and stops (the pre-existing single-generation
+behavior, unattended-loop is opt-in via a budget flag).
+
+Lineage tags: branched runs are named <tag>-g<G>-b<N> (generation G,
+branch N), verified disjoint from every existing runs/*.pt filename
+pattern (plain st-rN tags never contain "-g" or "-b", so no collision is
 possible by construction -- see the lineage-id-collision PRD discovery).
 """
 
@@ -165,6 +181,75 @@ def rank_branches(results):
     return scored
 
 
+PROMOTE_TOP_K = 3  # random pick among the top K branches each generation, not always rank #1
+SHIP_FLOOR = 74     # AGENTS.md's r16 ship baseline; a generation whose best doesn't beat this is NON-IMPROVING
+
+
+def run_generation(gen_idx, base_tag, prev, n_branches, steps, grpo_steps,
+                    skip_prepare, skip_action_forge, action_forge_scenarios, rng):
+    """Runs one generation's N branches sequentially from `prev`, ranks
+    them, and returns (ranked_results, promoted_result_or_None).
+    Promotion picks randomly among the top PROMOTE_TOP_K ranked branches
+    (diversity-preserving -- see module docstring) rather than always the
+    single leader, so an unattended multi-generation run does not
+    deterministically collapse onto one lineage's local optimum."""
+    gen_tag = f"{base_tag}-g{gen_idx}"
+    print(f"\n=== generation {gen_idx}: {n_branches} branches from {os.path.basename(prev)} (tag {gen_tag}) ===")
+    results = []
+    for i in range(n_branches):
+        branch_tag = f"{gen_tag}-b{i}"
+        print(f"\n--- branch {i + 1}/{n_branches}: {branch_tag} ---", flush=True)
+        r = run_one_round(branch_tag, prev, steps, grpo_steps,
+                           skip_prepare, skip_action_forge,
+                           action_forge_scenarios, sft_seed=1000 + gen_idx * 100 + i)
+        results.append(r)
+        if r:
+            print_round_summary(branch_tag)
+
+    ranked = rank_branches(results)
+    print(f"\n=== generation {gen_idx} comparison ({len(ranked)}/{n_branches} produced a scored checkpoint) ===")
+    if not ranked:
+        print("ALL BRANCHES FAILED before producing a forge-scored checkpoint -- "
+              "nothing to promote this generation; the run must stop, there is no valid --prev to continue from.")
+        return ranked, None
+    for rank, r in enumerate(ranked, 1):
+        print(f"  #{rank} {r['tag']}: forge {r['forge_pass_rate']}% | oracle_match {r['oracle_match_rate']}% | {r['ckpt']}")
+
+    pool = ranked[:PROMOTE_TOP_K]
+    promoted = rng.choice(pool)
+    best = ranked[0]
+    if best["forge_pass_rate"] is not None and best["forge_pass_rate"] <= SHIP_FLOOR:
+        print(f"\nNON-IMPROVING generation: best branch ({best['tag']}, forge {best['forge_pass_rate']}%) "
+              f"did not beat the {SHIP_FLOOR}% ship floor -- promoting {promoted['tag']} anyway to keep the "
+              f"unattended run going (per user direction: no human-in-the-loop pause), but this generation "
+              f"is NOT a ship candidate.")
+    else:
+        print(f"\nPromoted (top-{PROMOTE_TOP_K} random pick, not always the leader, for diversity): "
+              f"{promoted['tag']} (forge {promoted['forge_pass_rate']}%)")
+    return ranked, promoted
+
+
+def append_agents_md_entry(gen_idx, base_tag, ranked, promoted):
+    """Auto-appends a real-numbers entry to AGENTS.md for this generation,
+    same discipline as every hand-written round-result section already in
+    the file -- automated instead of human-typed, since the run is
+    unattended, but never a claim without a measurement behind it."""
+    path = os.path.join(HERE, "..", "AGENTS.md")
+    lines = [f"\n## Autonomous generation {gen_idx} ({base_tag}, auto-logged)\n\n"]
+    if not ranked:
+        lines.append("All branches failed before producing a scored checkpoint. No promotion.\n")
+    else:
+        for rank, r in enumerate(ranked, 1):
+            marker = " <- PROMOTED" if promoted and r["tag"] == promoted["tag"] else ""
+            lines.append(f"- #{rank} `{r['tag']}`: forge {r['forge_pass_rate']}%, "
+                          f"oracle match {r['oracle_match_rate']}%{marker}\n")
+        best = ranked[0]
+        if best["forge_pass_rate"] is not None and best["forge_pass_rate"] <= SHIP_FLOOR:
+            lines.append(f"- NON-IMPROVING vs the {SHIP_FLOOR}% ship floor; not a ship candidate.\n")
+    with open(path, "a", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prev", required=True)
@@ -177,6 +262,11 @@ def main():
     ap.add_argument("--action-forge-scenarios", type=int, default=800)
     ap.add_argument("--branches", type=int, default=1,
                      help="run N divergent branches from --prev sequentially instead of one linear round")
+    ap.add_argument("--generations", type=int, default=1,
+                     help="with --branches > 1, keep auto-promoting and running new generations up to N (unattended)")
+    ap.add_argument("--hours", type=float, default=None,
+                     help="with --branches > 1, keep auto-promoting generations until this many wall-clock hours elapse")
+    ap.add_argument("--seed", type=int, default=7, help="promotion-choice RNG seed")
     args = ap.parse_args()
     args.prev = os.path.abspath(args.prev)
 
@@ -188,46 +278,34 @@ def main():
             print_round_summary(args.tag)
         return
 
-    # Branched: N sequential rounds from the same --prev, distinct
-    # lineage tags and SFT seeds so weight trajectories genuinely
-    # diverge (not just RNG-driven data-order noise within one seed).
-    # SEQUENTIAL, never concurrent -- see module docstring.
-    print(f"=== branched round {args.tag}: {args.branches} sequential branches from {os.path.basename(args.prev)} ===")
-    results = []
-    for i in range(args.branches):
-        branch_tag = f"{args.tag}-b{i}"
-        print(f"\n--- branch {i + 1}/{args.branches}: {branch_tag} ---", flush=True)
-        r = run_one_round(branch_tag, args.prev, args.steps, args.grpo_steps,
-                           args.skip_prepare, args.skip_action_forge,
-                           args.action_forge_scenarios, sft_seed=1000 + i)
-        results.append(r)
-        if r:
-            print_round_summary(branch_tag)
-
-    ranked = rank_branches(results)
-    print(f"\n=== branch comparison: {args.tag} ({len(ranked)}/{args.branches} produced a scored checkpoint) ===")
-    if not ranked:
-        print("ALL BRANCHES FAILED before producing a forge-scored checkpoint -- no winner, nothing to promote. "
-              "Do not treat any branch's partial checkpoint as a result.")
-        return
-    parent_note = ""
-    for rank, r in enumerate(ranked, 1):
-        print(f"  #{rank} {r['tag']}: forge {r['forge_pass_rate']}% | oracle_match {r['oracle_match_rate']}% | {r['ckpt']}")
-    best = ranked[0]
-    # Flat-or-regressed check: if every branch is <= the ship baseline
-    # this project tracks (AGENTS.md's r16 74% floor), this round is a
-    # null result, same discipline as "r14->r15 flat, more identical
-    # rounds buy nothing" -- print it plainly instead of implying any
-    # branch is an improvement just because it ranked #1 among losers.
-    SHIP_FLOOR = 74
-    if best["forge_pass_rate"] is not None and best["forge_pass_rate"] <= SHIP_FLOOR:
-        print(f"\nNULL RESULT: best branch ({best['tag']}, forge {best['forge_pass_rate']}%) "
-              f"did not beat the {SHIP_FLOOR}% ship floor. Do not record this as a ship candidate; "
-              f"see AGENTS.md's 'more identical rounds buy nothing' precedent.")
-    else:
-        print(f"\nBest branch: {best['tag']} (forge {best['forge_pass_rate']}%) -- "
-              f"NOT auto-promoted; record in AGENTS.md as a measured result and decide ship status by hand, "
-              f"same as every prior round in this project's history.")
+    import random
+    rng = random.Random(args.seed)
+    t_start = time.time()
+    prev = args.prev
+    gen_idx = 0
+    while True:
+        ranked, promoted = run_generation(gen_idx, args.tag, prev, args.branches,
+                                           args.steps, args.grpo_steps,
+                                           args.skip_prepare, args.skip_action_forge,
+                                           args.action_forge_scenarios, rng)
+        append_agents_md_entry(gen_idx, args.tag, ranked, promoted)
+        if promoted is None:
+            print("\nStopping: no branch produced a valid checkpoint this generation.")
+            break
+        gen_idx += 1
+        elapsed_hours = (time.time() - t_start) / 3600
+        hit_generations = args.generations and gen_idx >= args.generations
+        hit_hours = args.hours and elapsed_hours >= args.hours
+        if not (args.generations > 1 or args.hours):
+            # neither budget flag set: run exactly one generation and stop
+            # (pre-existing single-generation behavior; the unattended
+            # multi-generation loop is opt-in via a budget flag)
+            break
+        if hit_generations or hit_hours:
+            print(f"\nStopping: budget reached (generations={gen_idx}, elapsed={elapsed_hours:.2f}h).")
+            break
+        prev = promoted["ckpt"]
+        print(f"\n>>> continuing unattended: generation {gen_idx} starts from {os.path.basename(prev)}")
 
 
 if __name__ == "__main__":
