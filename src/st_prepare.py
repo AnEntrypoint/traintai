@@ -16,13 +16,19 @@ Mixture (interleaved, anti-overfit by construction):
     chained NPC responses targeting chain_depth, measured ~0.1 baseline
     across r16-r23
   - a capped combinatorial-template subset from st_data.py output (~15%)
+  - kaggle_fantasy_convert.py output (kaggle_fantasy.jsonl): 350-word
+    chunks from an EXPLICIT-ALLOWLIST subset (53 of 124 titles) of
+    mehhti/classic-fantasy-and-adventure-literature-corpus (Kaggle) --
+    only titles that are both unambiguously public domain and genuinely
+    fantasy/adventure/mythology genre; see that module's docstring for
+    why the full 124-title claim was not trusted as-is
   - a TinyStories token slice (~20%) so the model keeps general coherence
 
 All sources pass a decontamination filter (TOXIC substrings: the old fixed
 template and second-person meta-narrative seams) and have *action beats*
 stripped from response lines (dialog-only output target) before
-tokenization. data/npc/pippa_holdout.jsonl is NEVER included -- it is the
-real-data generalization gate.
+tokenization. data/npc/pippa_holdout.jsonl and kaggle_fantasy_holdout.jsonl
+are NEVER included -- they are the real-data generalization gates.
 
 Output: data/train_npc.bin + data/val_npc.bin (uint16 + eot).
 """
@@ -41,6 +47,7 @@ TOK = os.path.join(DATA, "bpe32768.json")
 TEMPLATE_CAP = 6000
 FORGE_CAP = 2500
 ACTION_FORGE_CAP = 1500
+KAGGLE_FANTASY_CAP = 3000
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -187,10 +194,21 @@ def main():
                 texts.append(strip_beats(row["text"]))
                 n_chains += 1
 
+    n_kaggle_fantasy = 0
+    kaggle_fantasy_path = os.path.join(NPC, "kaggle_fantasy.jsonl")
+    if os.path.exists(kaggle_fantasy_path):
+        for row in read_jsonl(kaggle_fantasy_path):
+            if clean(row["text"]):
+                texts.append(row["text"])
+                n_kaggle_fantasy += 1
+                if n_kaggle_fantasy >= KAGGLE_FANTASY_CAP:
+                    break
+
     tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
     texts.extend(tmpl[:TEMPLATE_CAP])
     print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
           f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
+          f"kaggle_fantasy {n_kaggle_fantasy} | "
           f"template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
     ids = []
