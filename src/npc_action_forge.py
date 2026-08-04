@@ -92,10 +92,19 @@ def main():
                     text = text[: min(stops)]
                 lines = [l for l in text.strip().split("\n") if l.strip()]
                 action_lines = [l for l in lines if l.strip().startswith("[")]
+                dialog_lines = [l for l in lines if not l.strip().startswith("[")]
+                dialog_len = len(" ".join(dialog_lines).strip())
                 action = parse_action(action_lines[0]) if action_lines else None
                 n_gen += 1
                 kind_tot[kind] += 1
-                if len(action_lines) <= 1 and oracle_ok(oracle, action):
+                # dialog_len >= 16 mirrors npc_forge.py's too_short flaw: an
+                # empty/near-empty completion can pass oracle_ok() by having
+                # no action (correct abstention) while carrying zero dialog
+                # content -- that is not useful supervision, it is an
+                # empty-string attractor (measured: 1028/1028 rows from the
+                # first action-forge run had a blank NPC line, and st-r24
+                # trained on it regressed forge pass 78%->62%).
+                if len(action_lines) <= 1 and dialog_len >= 16 and oracle_ok(oracle, action):
                     n_hit += 1
                     kind_hit[kind] += 1
                     convo = f"{s['prompt']} {text.strip()}\nPlayer:\n"
