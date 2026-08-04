@@ -51,8 +51,9 @@ fresh clone you must sync AND reinstall torch from the cu128 index once
 first, or every script dies with `ModuleNotFoundError: torch` (or worse,
 silently trains on CPU). Run one torch job at a time. `round.py` builds
 the TinyStories token bins itself when they are absent (downloads from HF,
-no token needed). The Colab form of this recipe is the pinned gist
-(notebook link at the top of the tai README's NPC section).
+no token needed). The Colab form of this recipe is
+[`colab_round.ipynb`](colab_round.ipynb) in this repo —
+[open it in Colab](https://colab.research.google.com/github/AnEntrypoint/traintai/blob/main/colab_round.ipynb).
 
 ## Data regeneration
 
