@@ -9,7 +9,7 @@ import time
 import numpy as np
 import torch
 
-from device import get_device, mark_step, optimizer_step
+from device import get_device, mark_step, optimizer_step, setup_spmd_mesh, shard_batch
 from model import Config, TinyLM, make_model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -106,6 +106,14 @@ def main():
     device = get_device()
     os.makedirs(RUNS, exist_ok=True)
 
+    # Real multi-chip TPU v5e-8 support: mesh is None on every non-TPU
+    # device and on a single-chip TPU, so shard_batch() is a no-op
+    # everywhere except a real multi-chip pod. UNVERIFIED on real
+    # hardware as of this commit -- see device.py's module docstring.
+    spmd_mesh = setup_spmd_mesh()
+    if spmd_mesh is not None:
+        print(f"SPMD mesh active: sharding batches across {spmd_mesh.shape()[0]} XLA chips", flush=True)
+
     # vocab 4096 uses the original train.bin/val.bin; other vocabs use suffixed bins.
     suffix = args.data_suffix if args.data_suffix is not None else (
         "" if args.vocab == 4096 else f"_v{args.vocab}"
@@ -145,6 +153,7 @@ def main():
         for g in opt.param_groups:
             g["lr"] = lr
         x, y = train_b()
+        x, y = shard_batch(x, spmd_mesh), shard_batch(y, spmd_mesh)
         _, loss = model(x, y)
         opt.zero_grad(set_to_none=True)
         loss.backward()

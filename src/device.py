@@ -4,6 +4,23 @@ Priority: XLA TPU (torch_xla importable and the PJRT runtime reports TPU)
 -> CUDA -> MPS -> CPU. Set TRAINTAI_DEVICE=xla to force the XLA path (how
 the CPU PJRT client exercises it without TPU hardware); any other value is
 passed through as a torch device string.
+
+TPU multi-chip (v5e-8): a plain xm.xla_device() call, as this file always
+did, only ever grabs ONE logical XLA device -- confirmed by direct code
+inspection this session -- so running on Kaggle's 8-chip v5e-8 pod as-is
+uses 1/8 chips, no faster than a single-core TPU. setup_spmd_mesh() below
+adds real multi-chip support via torch_xla's SPMD API
+(torch_xla.distributed.spmd): a 1-D mesh over every visible XLA device,
+data-parallel sharded along the batch dimension (dim 0) via
+shard_batch() -- the correct minimal-risk sharding axis for this model
+(each chip gets a batch slice, the model itself stays replicated, no
+parameter-sharding complexity for a 29M-param model that easily fits in
+one chip's HBM). UNVERIFIED ON REAL TPU HARDWARE as of this commit --
+this session has no TPU access to confirm against; the next real Kaggle
+TPU v5e-8 kernel run must confirm num_devices() > 1 and that shard_batch()
+actually distributes work (e.g. via torch_xla's runtime device count
+check) before this is trusted as working, per this project's discipline
+that no number lands without a real run behind it.
 """
 
 import os
@@ -35,6 +52,59 @@ def get_device():
 
 def is_xla(device):
     return str(device).startswith("xla")
+
+
+def tpu_chip_count():
+    """Real device count from the XLA runtime, not assumed. Returns 1 on
+    any non-TPU device or import failure -- callers use this to decide
+    whether SPMD sharding is even applicable, never assume >1."""
+    try:
+        import torch_xla.runtime as xr
+        if xr.device_type() != "TPU":
+            return 1
+        return xr.global_runtime_device_count()
+    except Exception:
+        return 1
+
+
+def setup_spmd_mesh():
+    """Builds a 1-D SPMD mesh over every visible XLA device (real chip
+    count via tpu_chip_count(), never hardcoded to 8 -- a v5e-8 pod
+    reports 8, but this must not silently assume that number if Kaggle
+    ever changes the pod shape). Returns None if fewer than 2 chips are
+    visible (nothing to shard across) or torch_xla's SPMD module isn't
+    importable, so callers can no-op cleanly on any non-multi-chip
+    device rather than crash."""
+    n = tpu_chip_count()
+    if n < 2:
+        return None
+    try:
+        import numpy as np
+        import torch_xla.runtime as xr
+        import torch_xla.distributed.spmd as xs
+        xr.use_spmd()
+        device_ids = np.array(range(n))
+        mesh = xs.Mesh(device_ids, (n,), ("batch",))
+        return mesh
+    except Exception as e:
+        print(f"setup_spmd_mesh: SPMD unavailable ({e}), falling back to single-chip", flush=True)
+        return None
+
+
+def shard_batch(tensor, mesh):
+    """Shards `tensor` along dim 0 (the batch dimension) across `mesh`'s
+    chips -- data parallelism, the correct minimal-risk axis for this
+    model: at 29M params the whole model comfortably fits in one v5e
+    chip's HBM, so there is no need for the added complexity of
+    parameter/activation sharding, only splitting the batch so each
+    chip processes a different slice per step. No-op (returns the
+    tensor unchanged) if mesh is None, so call sites do not need an
+    if-mesh branch of their own."""
+    if mesh is None:
+        return tensor
+    import torch_xla.distributed.spmd as xs
+    xs.mark_sharding(tensor, mesh, ("batch", None))
+    return tensor
 
 
 def optimizer_step(opt, device):
