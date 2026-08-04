@@ -8,3 +8,4 @@ data/tinystories_slice.txt
 data/npc/pippa_deduped.jsonl
 .kaggle
 .env
+.agentplug-kv/

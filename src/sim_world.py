@@ -16,6 +16,8 @@ types), magic deferred entirely (no new resource pool -- USE-item flavor
 effects gated by the lore skill are a later phase, not built here).
 """
 
+import json
+import os
 import random
 from dataclasses import dataclass, field
 
@@ -48,6 +50,31 @@ NAME_POOL = [
     "Corvin Hale", "Meret Sil", "Ansel Dry", "Thora Vex", "Bram Ostler",
 ]
 
+_KAGGLE_NAMES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "..", "data", "npc", "kaggle_names.jsonl")
+
+
+def load_name_pool():
+    """Extends NAME_POOL with kaggle_names_convert.py's decontaminated
+    output when present (data/npc/kaggle_names.jsonl -- 608 fantasy/goblin
+    names from isaacbenge/fantasy-for-markov-generator, CC0-1.0). Falls
+    back to the hand-authored NAME_POOL alone if the file hasn't been
+    generated yet, so sim_world.py never hard-depends on the Kaggle pull
+    having run."""
+    if not os.path.exists(_KAGGLE_NAMES_PATH):
+        return list(NAME_POOL)
+    extra = []
+    with open(_KAGGLE_NAMES_PATH, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                extra.append(json.loads(line)["name"])
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return list(NAME_POOL) + extra
+
 HUNGER_DECAY = 3
 THIRST_DECAY = 4
 STARVE_DAMAGE = 2
@@ -76,9 +103,9 @@ class Agent:
 
 
 class NameRegistry:
-    def __init__(self, rng, pool=NAME_POOL):
+    def __init__(self, rng, pool=None):
         self.rng = rng
-        self.available = list(pool)
+        self.available = list(pool) if pool is not None else load_name_pool()
         self.rng.shuffle(self.available)
         self.taken = set()
 

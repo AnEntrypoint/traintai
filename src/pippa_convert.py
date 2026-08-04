@@ -9,10 +9,10 @@ enters the bins -- the genuine-improvement gate against overfitting.
 Outputs: data/npc/pippa_st.jsonl (training) + data/npc/pippa_holdout.jsonl.
 """
 
-import json
 import os
-import random
 import re
+
+from kaggle_source_convert import read_jsonl_rows, run_conversion
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NPC = os.path.join(HERE, "..", "data", "npc")
@@ -72,29 +72,9 @@ def convert(row):
 
 
 def main():
-    random.seed(7)
-    out, holdout = [], []
-    with open(SRC, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            c = convert(row)
-            if c:
-                (holdout if random.random() < 0.04 else out).append(c)
-    random.shuffle(out)
-    random.shuffle(holdout)
-    out, holdout = out[:MAX_ROWS], holdout[:HOLDOUT]
-    with open(OUT, "w", encoding="utf-8") as f:
-        for c in out:
-            f.write(json.dumps({"text": c}) + "\n")
-    with open(HOLD, "w", encoding="utf-8") as f:
-        for c in holdout:
-            f.write(json.dumps({"text": c}) + "\n")
-    print(f"wrote {len(out)} training + {len(holdout)} held-out PIPPA conversations")
+    run_conversion(read_jsonl_rows(SRC), convert, OUT, HOLD,
+                   max_rows=MAX_ROWS, holdout_cap=HOLDOUT, seed=7,
+                   holdout_fraction=0.04, label="PIPPA conversations")
 
 
 if __name__ == "__main__":
