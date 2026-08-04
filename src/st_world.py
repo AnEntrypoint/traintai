@@ -69,13 +69,31 @@ SHOPKEEPERS = {
 }
 
 PLACES = [
-    ("Karhold", "a mountain town of forges and coal smoke", ["the pass north", "Emberhold by the low road"]),
-    ("Emberhold", "a walled city with a bell tower and two markets", ["Karhold", "the river crossing"]),
-    ("Nighthaven", "a quiet elven village under silver boughs", ["the Echoing Glade", "Moonglade proper"]),
+    ("Karhold", "a mountain town of forges and coal smoke", ["Emberhold"]),
+    ("Emberhold", "a walled city with a bell tower and two markets", ["Karhold", "Brannock", "Nighthaven"]),
+    ("Nighthaven", "a quiet elven village under silver boughs", ["Emberhold", "the Echoing Glade"]),
     ("the Echoing Glade", "a hidden clearing where the veil runs thin", ["Nighthaven"]),
-    ("Merrow Point", "cliff farms and salt-thyme hives over the sea", ["the cliff road south"]),
-    ("Brannock", "a trading city on black water, famous for its sewers and its cheese", ["the under-docks", "the high road"]),
+    ("Merrow Point", "cliff farms and salt-thyme hives over the sea", ["Brannock"]),
+    ("Brannock", "a trading city on black water, famous for its sewers and its cheese", ["Emberhold", "Merrow Point"]),
 ]
+
+# Symmetric weighted adjacency for real pathfinding (src/sim_world.py's
+# TRAVEL verb), layered on top of PLACES rather than replacing its exits
+# list (place_convo's flavor text only ever interpolates exits[0]/[1] as
+# prose, so PLACES itself stays name-only and lightweight). Weights are
+# ticks to traverse the edge -- rough relative distance, not measured in
+# any real unit. Every PLACES entry must appear as a TRAVEL_GRAPH key with
+# edges that are symmetric (if A->B exists, B->A exists with the same
+# weight) and the graph must be fully connected -- verified by
+# sim_world.py at import time, not just asserted here.
+TRAVEL_GRAPH = {
+    "Karhold": {"Emberhold": 2},
+    "Emberhold": {"Karhold": 2, "Brannock": 3, "Nighthaven": 2},
+    "Nighthaven": {"Emberhold": 2, "the Echoing Glade": 1},
+    "the Echoing Glade": {"Nighthaven": 1},
+    "Merrow Point": {"Brannock": 2},
+    "Brannock": {"Emberhold": 3, "Merrow Point": 2},
+}
 
 QUEST_SOURCE = os.path.join(NPC, "dprashar-output.json")
 
