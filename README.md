@@ -52,10 +52,10 @@ GPU/TPU note: `UV_NO_SYNC=1` only protects an already-provisioned venv -- on a
 fresh clone you must sync AND install an accelerator torch once first, or
 every script dies with `ModuleNotFoundError: torch` (or worse, silently
 trains on CPU). For CUDA GPUs that is torch from the cu128 index (above);
-on a TPU (Colab v5e) it is a Python 3.10 venv with `torch==2.4.0` plus the
-matching `torch_xla-2.4.0` tpuvm wheel instead (the pair that binds to
-Colab's TPU runtime; torch_xla's wheel does not pull torch) --
-`src/device.py`
+on a TPU (Colab v5e) neither is needed: the runtime's system python already
+ships the matched torch + torch_xla pair, and the notebook only adds the
+missing light deps (`uv pip install --system numpy==1.26.4 requests
+tokenizers tqdm`) -- `src/device.py`
 auto-detects XLA TPU > CUDA > MPS > CPU, and the notebook below does the
 full TPU setup. Run one torch job at a time. `round.py` builds
 the TinyStories token bins itself when they are absent (downloads from HF,
