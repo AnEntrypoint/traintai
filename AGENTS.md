@@ -280,3 +280,111 @@ self-distillation risk. Measures taken:
   separately.
 - HF token discipline: the token used for the pull is exposed (public
   gist history + chat) and must be rotated; it was never written to disk.
+
+## r24 regression + empty-response bug (2026-08-04)
+
+st-r24 (action-forge + gold chains added to r23's mixture) regressed
+forge pass 78% -> 62%, `no_stop` flaws jumping ~8% -> 35%. Root cause,
+found by direct inspection of the injected data, not assumed:
+`npc_action_forge.py`'s rejection-sampling condition
+(`len(action_lines) <= 1 and oracle_ok(oracle, action)`) let a
+completely blank NPC response pass, since `oracle_ok(None, None)` is
+True for both "correctly abstained with real dialog" and "generated
+nothing." All 1028 rows injected that run had a blank response line --
+the model was trained to trail off after emitting nothing. Fixed with a
+`dialog_len >= 16` floor mirroring `npc_forge.py`'s existing
+`too_short` flaw threshold. `PLACES`' travel-graph exits were also found
+broken (4 of 6 places pointed to flavor-text strings with no matching
+place entry) and rebuilt into a real symmetric, BFS-verified graph
+(`TRAVEL_GRAPH`) ahead of the survival-sim work below.
+
+## Survival-sim arc: sim_world.py, sim_tournament.py (2026-08-04)
+
+User-directed expansion: agents with hunger/thirst/HP/skills/inventory
+(`sim_world.py`, wraps `sim_econ.World` rather than forking it), new
+verbs `TRAVEL|ATTACK|TALK|USE|WAIT` extending `ACTION_RE` in
+`npc_score.py` (regression-verified the existing GOTO/DEAL/BUY parsing
+is byte-for-byte unaffected), and `sim_tournament.py` -- a
+population/tournament self-play generation loop (not GRPO reward
+shaping, which AGENTS.md already records as a dead lever for action
+accuracy): K rollout variants per agent-turn at varying temperature,
+forked world states, a real measured fitness function (ticks survived +
+trades + combats survived + places reached - died), top-fraction
+selection into `data/npc/st_survival.jsonl`.
+
+Baseline measured before any training on this: 0% emission of any new
+verb against r23 (`sim_baseline.py`), matching a completely deterministic
+tournament run (every branch dies at the identical tick regardless of
+seed/temperature, since nothing the model does varies yet) -- the honest
+starting point, not yet a result. `model.py` gained real attention
+padding-mask support (`build_causal_padding_mask`, verified numerically
+identical to the prior single-sequence path) so `sim_tournament.py` could
+batch all branches in lockstep instead of one sequential call per
+branch-turn: measured 2.86x real speedup (77.5s -> 27.1s, identical
+config/seed), 51s at the plan's default 32-branch config.
+
+## Kaggle dataset integration (2026-08-04)
+
+Per user direction ("feed it whatever good public kaggle sets we can
+find," later "all the sets integrated as the 5% of extra data to prevent
+overfitting"): `kaggle_source_convert.py` extracts the shuffle/holdout-
+split/cap/write loop `pippa_convert.py` already had (verified byte-
+identical RNG output after the refactor) so a new source is a
+`convert_row` function plus one `run_conversion` call.
+
+- `kaggle_names_convert.py`: isaacbenge/fantasy-for-markov-generator
+  (CC0), 608 decontaminated fantasy names (only the 2 unambiguously-
+  synthetic categories used, not the 9 real-culture name lists; a
+  blocklist catches the exact real-person contamination pattern found in
+  `synthetic_names.jsonl` this session -- see the r24 section above).
+- `kaggle_fantasy_convert.py`: mehhti/classic-fantasy-and-adventure-
+  literature-corpus. The uploader's "all 124 titles pre-1931 public
+  domain" claim was checked, not trusted -- found "A Farewell to Arms"
+  (1929, historically estate-enforced) and "The Great Gatsby" (1925,
+  US public domain only since 2021) in the list. Fixed with an explicit
+  53-title allowlist (pre-1900 or long-settled public domain, genuinely
+  fantasy/adventure/mythology genre), not a blanket accept.
+- `kaggle_wiki_convert.py`: ffatty/plain-text-wikipedia-simpleenglish
+  (MIT), sparse ~5%-of-mixture interleave (`KAGGLE_WIKI_CAP=900`) per the
+  Distribution Smoothing / Emergent Misalignment Prevention literature --
+  real encyclopedic text plays the same general-coherence role
+  TinyStories does, deliberately capped small rather than scaled up.
+- `kaggle_werewolf_convert.py` + `kaggle_gamearena_convert.py`: all 13
+  user-named Kaggle Game Arena datasets (ultimate-tic-tac-toe,
+  bargaining, lines-of-action, coin-game, checkers, clobber, dots-and-
+  boxes, dark-hex, word-association, five-in-a-row, poker-heads-up,
+  werewolf, chess -- CC BY 4.0, Claude/GPT/Gemini/Grok playing each
+  other). Two content shapes found by direct inspection: language-heavy
+  games have real reasoning/message text; pure move-log games (chess,
+  checkers, etc) are OpenSpiel notation with zero natural-language
+  content, rendered as compact state->move lines rather than a
+  fabricated dialog card. Combined into one sparse `kaggle_gamearena.jsonl`
+  (`KAGGLE_GAMEARENA_CAP=900`); Werewolf additionally keeps its own
+  larger `KAGGLE_WEREWOLF_CAP=2000` allocation by explicit user choice.
+  `sim_tournament.py` also sparsely interleaves rows from these same
+  pools directly into its own generation output (`KAGGLE_INTERLEAVE_EVERY
+  = 20`), not only via `st_prepare.py`'s per-round mixture rebuild.
+- LLM-generated sources (gamearena, werewolf) are never counted toward
+  the real-data ratio below, same discipline as every synthetic source.
+
+**Real-vs-synthetic ratio re-audit (2026-08-04):** the 2026-08-03 audit
+measured real rows at ~24% (3.7K/47K). Recomputed against the current
+capped mixture (real: chimbiwide 3668 + pippa_st 1457 + kaggle_fantasy
+3000 + kaggle_wiki 900 = 9025; synthetic: forge 2500 + action_forge 1028
++ chains 241 + st_world 900 + st_sim 2870 + template 6000 + gamearena 900
++ werewolf 693 + authored 26 = 15158) gives **37.3% real** (9025/24183),
+UP from 24% -- adding kaggle_fantasy and kaggle_wiki as real sources
+moved the ratio in the right direction even after also adding several
+new synthetic (LLM-generated) Kaggle sources. Re-run this computation
+after any future cap change; do not assume the ratio holds.
+
+**GPU-hour quota (2026-08-04, WebSearch-confirmed):** Kaggle free tier is
+30 GPU-hours/week (P100/T4/T4x2, shared pool) + 20 TPU-hours/week
+(v3-8/v5e-8, separate pool), sessions capped ~9-12hrs. A single real T4
+beat a P100 on a comparable PyTorch benchmark in cited literature, so T4
+(not P100) is the right default; T4x2 only helps once code actually runs
+two GPUs in parallel (not yet true here, and AGENTS.md already records
+two concurrent torch jobs crashing this machine twice). TPU v5e-8 is an
+8-chip pod but `device.py` only grabs one XLA device
+(`xm.xla_device()`) -- using the full pod needs real `torch_xla`
+SPMD/sharding work, scoped as a separate future item, not a config flag.
