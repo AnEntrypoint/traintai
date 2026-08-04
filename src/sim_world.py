@@ -85,6 +85,9 @@ FORAGE_CAP_PER_PLACE = 3  # diminishing-returns commons: N free forages before a
 SKILLS = ("blade", "herbalism", "lore", "haggle", "travel")
 
 
+STARTING_GOLD = 40
+
+
 @dataclass
 class Agent:
     name: str
@@ -93,7 +96,7 @@ class Agent:
     hp_max: int = 20
     hunger: int = 100
     thirst: int = 100
-    gold: int = 0
+    gold: int = STARTING_GOLD
     inventory: dict = field(default_factory=dict)
     skills: dict = field(default_factory=lambda: {s: 0 for s in SKILLS})
     alive: bool = True
@@ -262,6 +265,37 @@ class SurvivalWorld:
         agent.thirst = min(100, agent.thirst + FORAGE_THIRST_GAIN)
         agent.skills["herbalism"] += 1
         return {"gained": True, "reason": None}
+
+    # -- trade ------------------------------------------------------------
+
+    def resolve_trade(self, agent, item_name):
+        """Spends the agent's gold against sim_econ's shop stock (trades
+        are trade-keyed, not place-keyed, matching sim_econ.py's own
+        abstraction level -- st_world.py's PLACES/TRAVEL_GRAPH are
+        physical travel nodes distinct from sim_econ's shop economy, so
+        this does not invent a new place<->shop mapping). Buying
+        provisioner food/drink items also restores hunger/thirst, making
+        USE-to-trade a genuine alternative to free foraging once an
+        agent has coin -- the risk/reward the scarcity economy is meant
+        to create."""
+        for trade, stock in self.econ.stock.items():
+            if item_name in stock and stock[item_name] > 0:
+                item = next((i for i in ITEMS[trade] if i[0] == item_name), None)
+                if item is None:
+                    continue
+                price = item[1]
+                if agent.gold < price:
+                    return {"bought": False, "reason": "cannot afford"}
+                agent.gold -= price
+                stock[item_name] -= 1
+                agent.inventory[item_name] = agent.inventory.get(item_name, 0) + 1
+                agent.skills["haggle"] += 1
+                if trade == "provisioner":
+                    agent.hunger = min(100, agent.hunger + FORAGE_HUNGER_GAIN)
+                    agent.thirst = min(100, agent.thirst + FORAGE_THIRST_GAIN)
+                self._log(f"{agent.name} bought {item_name} for {price} gold")
+                return {"bought": True, "reason": None, "price": price}
+        return {"bought": False, "reason": "not in stock anywhere"}
 
     # -- world step ----------------------------------------------------------
 
