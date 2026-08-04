@@ -29,21 +29,35 @@ Mixture (interleaved, anti-overfit by construction):
     real-world text counters over-adaptation to the specialized mix
     better than a large block would, so this stays deliberately capped
     small (KAGGLE_WIKI_CAP), not scaled up like the fantasy corpus
-  - kaggle_werewolf_convert.py output (kaggle_werewolf.jsonl): real
-    LLM-vs-LLM Werewolf social-deduction transcripts (Kaggle, CC BY 4.0,
-    Claude/GPT/Gemini/Grok playing each other) -- LLM-generated, same
-    caveat class as any synthetic source (never counted toward the real-
-    data ratio AGENTS.md tracks), but teaches strategic multi-agent
-    reasoning and negotiation through dialogue, directly relevant to the
-    survival-sim's TALK verb rather than just RP-style variety
+  - kaggle_gamearena_convert.py output (kaggle_gamearena.jsonl): a SPARSE
+    (~5% of mixture, same role as kaggle_wiki.jsonl) interleave combining
+    ALL 13 user-named Kaggle Game Arena datasets (ultimate-tic-tac-toe,
+    bargaining, lines-of-action, coin-game, checkers, clobber,
+    dots-and-boxes, dark-hex, word-association, five-in-a-row, poker,
+    werewolf, chess -- all CC BY 4.0, Claude/GPT/Gemini/Grok playing each
+    other) into ONE combined capped source rather than each dataset
+    getting its own large allocation. Two content shapes: language-heavy
+    games (werewolf/bargaining/poker/word-association) render as ST-format
+    dialog cards; pure move-log games (chess/checkers/etc, no natural-
+    language content at all) render as compact state->move continuation
+    lines, not a fabricated persona card. LLM-generated throughout --
+    never counted toward the real-data ratio AGENTS.md tracks, but
+    teaches strategic multi-agent reasoning under uncertainty.
+  - kaggle_werewolf_convert.py output (kaggle_werewolf.jsonl): Werewolf's
+    OWN separate, larger capped allocation (KAGGLE_WEREWOLF_CAP=2000), IN
+    ADDITION TO its share of the combined kaggle_gamearena.jsonl pool
+    above -- richest/most-tested single source in the family, kept at
+    higher weight by explicit choice rather than folded down to an equal
+    per-game share
   - a TinyStories token slice (~20%) so the model keeps general coherence
 
 All sources pass a decontamination filter (TOXIC substrings: the old fixed
 template and second-person meta-narrative seams) and have *action beats*
 stripped from response lines (dialog-only output target) before
 tokenization. data/npc/pippa_holdout.jsonl, kaggle_fantasy_holdout.jsonl,
-kaggle_wiki_holdout.jsonl, and kaggle_werewolf_holdout.jsonl are NEVER
-included -- they are the real-data generalization gates.
+kaggle_wiki_holdout.jsonl, kaggle_gamearena_holdout.jsonl, and
+kaggle_werewolf_holdout.jsonl are NEVER included -- they are the
+real-data generalization gates.
 
 Output: data/train_npc.bin + data/val_npc.bin (uint16 + eot).
 """
@@ -64,7 +78,8 @@ FORGE_CAP = 2500
 ACTION_FORGE_CAP = 1500
 KAGGLE_FANTASY_CAP = 3000
 KAGGLE_WIKI_CAP = 900  # sparse interleave target ~5% of a typical round's mixture, per Distribution Smoothing literature
-KAGGLE_WEREWOLF_CAP = 2000
+KAGGLE_GAMEARENA_CAP = 900  # same sparse ~5% role, combined across all 13 Kaggle Game Arena datasets -- see kaggle_gamearena_convert.py
+KAGGLE_WEREWOLF_CAP = 2000  # Werewolf's own larger, separately-capped allocation, IN ADDITION TO its share of kaggle_gamearena.jsonl's combined pool
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -231,6 +246,16 @@ def main():
                 if n_kaggle_wiki >= KAGGLE_WIKI_CAP:
                     break
 
+    n_kaggle_gamearena = 0
+    kaggle_gamearena_path = os.path.join(NPC, "kaggle_gamearena.jsonl")
+    if os.path.exists(kaggle_gamearena_path):
+        for row in read_jsonl(kaggle_gamearena_path):
+            if clean(row["text"]):
+                texts.append(strip_beats(row["text"]))
+                n_kaggle_gamearena += 1
+                if n_kaggle_gamearena >= KAGGLE_GAMEARENA_CAP:
+                    break
+
     n_kaggle_werewolf = 0
     kaggle_werewolf_path = os.path.join(NPC, "kaggle_werewolf.jsonl")
     if os.path.exists(kaggle_werewolf_path):
@@ -246,7 +271,7 @@ def main():
     print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
           f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
           f"kaggle_fantasy {n_kaggle_fantasy} | kaggle_wiki {n_kaggle_wiki} | "
-          f"kaggle_werewolf {n_kaggle_werewolf} | "
+          f"kaggle_gamearena {n_kaggle_gamearena} | kaggle_werewolf {n_kaggle_werewolf} | "
           f"template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
     ids = []
