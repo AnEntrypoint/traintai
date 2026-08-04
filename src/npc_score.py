@@ -68,7 +68,13 @@ def ngram_repeat(text, n=3, max_count=2):
     return grams.most_common(1)[0][1] > max_count
 
 
-ACTION_RE = re.compile(r"^\[(GOTO|DEAL|BUY): (.+)\]$")
+# GOTO/TRAVEL/TALK/ATTACK/USE/WAIT take a single string arg (place or
+# name or item, or nothing for WAIT); DEAL/BUY additionally require a
+# trailing integer price. Keeping WAIT's arg optional (".*" not ".+") so
+# "[WAIT: ]" and a bare "[WAIT:]" both parse -- an explicit no-op turn is
+# a first-class case, same as GOTO/DEAL abstention already is.
+ACTION_RE = re.compile(r"^\[(GOTO|DEAL|BUY|TRAVEL|TALK|ATTACK|USE|WAIT): ?(.*)\]$")
+ARG_ONLY_VERBS = ("GOTO", "TRAVEL", "TALK", "ATTACK", "USE", "WAIT")
 
 
 def parse_action(line):
@@ -76,8 +82,8 @@ def parse_action(line):
     if not m:
         return None
     verb, rest = m.group(1), m.group(2)
-    if verb == "GOTO":
-        return ("GOTO", rest.strip(), None)
+    if verb in ARG_ONLY_VERBS:
+        return (verb, rest.strip() or None, None)
     parts = rest.rsplit(" ", 1)
     if len(parts) == 2 and parts[1].isdigit():
         return (verb, parts[0].strip(), int(parts[1]))
@@ -93,8 +99,8 @@ def oracle_ok(oracle, action):
     overb, orest = om.group(1), om.group(2)
     if action is None or action[0] != overb:
         return False
-    if overb == "GOTO":
-        return action[1] == orest.strip()
+    if overb in ARG_ONLY_VERBS:
+        return action[1] == (orest.strip() or None)
     oparts = orest.rsplit(" ", 1)
     return action[1] == oparts[0].strip() and abs(action[2] - int(oparts[1])) <= 0.3 * int(oparts[1])
 

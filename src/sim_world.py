@@ -20,7 +20,20 @@ import random
 from dataclasses import dataclass, field
 
 from sim_econ import World
-from st_world import ITEMS, SHOPKEEPERS, TRAVEL_GRAPH
+from st_world import ITEMS, PLACES, SHOPKEEPERS, TRAVEL_GRAPH
+
+PLACE_DESC = {p[0]: p[1] for p in PLACES}
+
+# One-line bio flavor per agent, cycled by index rather than stored per-
+# Agent (keeps Agent itself free of static flavor text -- the bio is a
+# rendering-time concern, not simulation state).
+BIO_TEMPLATES = [
+    "a wanderer who trusts a blade more than a promise",
+    "a fallen scholar working off an old debt",
+    "a trapper who knows every game trail for a day's walk",
+    "a former guard who left the wall for reasons kept close",
+    "a peddler between routes, counting coin twice",
+]
 
 # Fixed unique-name pool. Deliberately NOT drawn from st_data.py's
 # synthetic_names.jsonl / st_conversations.jsonl pool -- those are the
@@ -232,3 +245,32 @@ class SurvivalWorld:
         for a in self.agents.values():
             self.tick_needs(a)
         self.tick_n += 1
+
+    # -- rendering ------------------------------------------------------------
+
+    def render_turn(self, agent, last_event=None):
+        """Renders one agent's turn as a compact, Markovian prompt --
+        extends sim_econ.convo_to_scenario()'s header+trailing-name-colon
+        pattern with a Status/Here/Recent block built from live world
+        state instead of static card text. Deliberately re-renders fresh
+        every call rather than accumulating a transcript: the model's
+        512-token context window has no room for multi-turn history, so
+        every turn must stand alone (state in, action out)."""
+        bio = BIO_TEMPLATES[hash(agent.name) % len(BIO_TEMPLATES)]
+        place_desc = PLACE_DESC.get(agent.place, "")
+        others = [o.name for o in self.agents_at(agent.place) if o.name != agent.name][:2]
+        here_bits = []
+        if others:
+            here_bits.append(", ".join(others))
+        here = "; ".join(here_bits) if here_bits else "no one else"
+        recent = last_event or (self.recent[-1] if self.recent else "the road is quiet")
+        lines = [
+            f"Description: {agent.name}, {bio}.",
+            f"Scenario: {agent.place} -- {place_desc}.",
+            f"Status: HP {agent.hp}/{agent.hp_max}, hunger {agent.hunger}, thirst {agent.thirst}, gold {agent.gold}",
+            f"Here: {here}",
+            f"Recent: {recent}",
+            "<START>",
+            "Player:",
+        ]
+        return "\n".join(lines)
