@@ -22,6 +22,7 @@ but the DATA must pass its own target metric before it is worth training on).
 import json
 import os
 import random
+import re
 
 from st_world import EXPANDED_ITEMS, EVENTS, ORIGIN_PLACE, LINEAGE, SHOPKEEPERS, PLACES
 
@@ -33,7 +34,6 @@ OUT = os.path.join(NPC, "st_chains.jsonl")
 def _anchor_word(s):
     """Longest 5+-letter lowercase word in s, for a scenario line to name
     and sentence 1 to be built around."""
-    import re
     words = re.findall(r"[A-Za-z]{5,}", s)
     return max(words, key=len).lower() if words else None
 
