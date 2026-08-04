@@ -16,14 +16,16 @@ jobs:
     # Witnesses the TPU code path (src/device.py + XLA step semantics in
     # train.py/npc_grpo.py) on the CPU PJRT client -- torch_xla ships no
     # Windows wheels, so this job is the standing execution witness for the
-    # Colab v5e-1 path. TRAINTAI_DEVICE=xla forces the XLA branch.
+    # Colab v5e path. TRAINTAI_DEVICE=xla forces the XLA branch. Mirrors the
+    # notebook's stack exactly: python 3.10 + torch 2.4.0 + the torch_xla
+    # 2.4.0 tpuvm wheel (the pair that binds to Colab's TPU runtime).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pip install torch==2.9.0 torch_xla==2.9.0  # matched pair; torch_xla's wheel does not pull torch
+          python-version: "3.10"
+      - run: pip install torch==2.4.0 https://storage.googleapis.com/pytorch-xla-releases/wheels/tpuvm/torch_xla-2.4.0-cp310-cp310-linux_x86_64.whl
       - name: XLA device-path witness
         run: |
           TRAINTAI_DEVICE=xla python - <<'EOF'
