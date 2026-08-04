@@ -16,6 +16,7 @@ import os
 import torch
 from tokenizers import Tokenizer
 
+from device import get_device
 from model import Config, TinyLM
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +28,7 @@ def main():
     ap.add_argument("ckpt")
     args = ap.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = Config(**ck["cfg"])
     model = TinyLM(cfg).to(device)

@@ -26,6 +26,7 @@ import torch
 from tokenizers import Tokenizer
 
 from model import Config, TinyLM
+from device import get_device
 from npc_score import COMMON, INTENT_KEYS, TEMPLATE_ECHO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -147,7 +148,7 @@ def main():
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     model = TinyLM(Config(**ck["cfg"])).to(device)
     model.load_state_dict(ck["state"])

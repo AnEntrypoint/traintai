@@ -9,19 +9,12 @@ import time
 import numpy as np
 import torch
 
+from device import get_device, mark_step, optimizer_step
 from model import Config, TinyLM, make_model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
 RUNS = os.path.join(HERE, "..", "runs")
-
-
-def get_device():
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
 
 
 class Batcher:
@@ -122,7 +115,7 @@ def main():
                   d_model=args.d_model, n_layers=args.n_layers, n_heads=args.n_heads)
     model = make_model(args.arm, args.target_core, base, fixed_ffn=args.fixed_ffn).to(device)
     if args.init_from:
-        ck = torch.load(args.init_from, map_location=device, weights_only=False)
+        ck = torch.load(args.init_from, map_location="cpu", weights_only=False)
         model.load_state_dict(ck["state"])
         print(f"initialized from {args.init_from}")
     budget = model.param_budget()
@@ -156,7 +149,7 @@ def main():
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step()
+        optimizer_step(opt, device)
         if args.optimizer == "muon":
             muon_lr = lr_at(step, args.steps, args.muon_lr, args.warmup, args.stable_frac)
             with torch.no_grad():
@@ -165,6 +158,7 @@ def main():
                     u = p.grad.lerp(buf, args.muon_momentum)
                     p.add_(zeropower_via_newtonschulz5(u),
                            alpha=-muon_lr * max(1.0, p.size(0) / p.size(1)) ** 0.5)
+            mark_step(device)
 
         if step % args.eval_every == 0 or step == args.steps - 1:
             vl = evaluate(model, val_b, args.eval_iters)

@@ -24,6 +24,7 @@ import torch
 from tokenizers import Tokenizer
 
 from model import Config, TinyLM
+from device import get_device
 from npc_score import ACTION_RE, oracle_ok, parse_action
 from st_world import EXPANDED_ITEMS as ITEMS
 from st_world import PLACES
@@ -59,7 +60,7 @@ def main():
     args = ap.parse_args()
 
     torch.manual_seed(5)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     model = TinyLM(Config(**ck["cfg"])).to(device)
     model.load_state_dict(ck["state"])

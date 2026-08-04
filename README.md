@@ -11,6 +11,8 @@ arc is in this repo's README history and in `AGENTS.md`.
 
 ## Layout
 
+- `src/device.py` — single accelerator pick for every round-path script
+  (XLA TPU > CUDA > MPS > CPU) plus XLA-correct optimizer_step/mark_step
 - `src/st_data.py` — combinatorial card->conversation generator (no raw
   scenario splicing; the mode-collapse attractor that rewrite removed is
   documented in AGENTS.md)
@@ -46,12 +48,15 @@ mkdir -p runs && curl -sL -o runs/ple-st-r16-grpo.pt https://github.com/AnEntryp
 UV_NO_SYNC=1 uv run python src/round.py --prev runs/ple-st-r16-grpo.pt --tag st-rN
 ```
 
-GPU note: `UV_NO_SYNC=1` only protects an already-provisioned venv -- on a
-fresh clone you must sync AND reinstall torch from the cu128 index once
-first, or every script dies with `ModuleNotFoundError: torch` (or worse,
-silently trains on CPU). Run one torch job at a time. `round.py` builds
+GPU/TPU note: `UV_NO_SYNC=1` only protects an already-provisioned venv -- on a
+fresh clone you must sync AND install an accelerator torch once first, or
+every script dies with `ModuleNotFoundError: torch` (or worse, silently
+trains on CPU). For CUDA GPUs that is torch from the cu128 index (above);
+on a TPU (Colab v5e-1) it is `torch_xla[tpu]` instead -- `src/device.py`
+auto-detects XLA TPU > CUDA > MPS > CPU, and the notebook below does the
+full TPU setup. Run one torch job at a time. `round.py` builds
 the TinyStories token bins itself when they are absent (downloads from HF,
-no token needed). The Colab form of this recipe is
+no token needed). The Colab form of this recipe (TPU v5e-1) is
 [`colab_round.ipynb`](colab_round.ipynb) in this repo —
 [open it in Colab](https://colab.research.google.com/github/AnEntrypoint/traintai/blob/main/colab_round.ipynb).
 

@@ -12,3 +12,61 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m compileall -q src data/prepare.py
+  xla:
+    # Witnesses the TPU code path (src/device.py + XLA step semantics in
+    # train.py/npc_grpo.py) on the CPU PJRT client -- torch_xla ships no
+    # Windows wheels, so this job is the standing execution witness for the
+    # Colab v5e-1 path. TRAINTAI_DEVICE=xla forces the XLA branch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install torch_xla  # pulls its matched torch from PyPI
+      - name: XLA device-path witness
+        run: |
+          TRAINTAI_DEVICE=xla python - <<'EOF'
+          import sys
+          sys.path.insert(0, "src")
+          import torch
+          from device import get_device, is_xla, mark_step, optimizer_step
+          from model import Config, TinyLM
+
+          dev = get_device()
+          assert is_xla(dev), f"expected an xla device, got {dev}"
+
+          cfg = Config(seq_len=32, ple_dim=16, vocab_size=64, d_model=32, n_layers=2, n_heads=2)
+          model = TinyLM(cfg).to(dev)
+          opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+          x = torch.randint(0, 64, (2, 32), device=dev)
+          y = torch.randint(0, 64, (2, 32), device=dev)
+          for _ in range(3):
+              _, loss = model(x, y)
+              opt.zero_grad(set_to_none=True)
+              loss.backward()
+              torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+              optimizer_step(opt, dev)
+          mark_step(dev)
+          print("train steps ok, final loss", loss.item())
+
+          # the generate_k op set (top-k mask + softmax + multinomial growth)
+          model.eval()
+          idx = torch.randint(0, 64, (1, 8), device=dev).repeat(2, 1)
+          with torch.no_grad():
+              for _ in range(4):
+                  logits, _ = model(idx)
+                  z = logits[:, -1, :] / 0.8
+                  thresh = z.topk(40, dim=-1).values[:, -1:]
+                  z = z.masked_fill(z < thresh, float("-inf"))
+                  idx = torch.cat([idx, torch.multinomial(torch.softmax(z, dim=-1), 1)], dim=1)
+          assert idx.shape == (2, 12), idx.shape
+          print("generation ok, out shape", tuple(idx.shape))
+
+          # checkpoint round-trip: save on xla, load on cpu
+          torch.save({"cfg": cfg.__dict__, "state": model.state_dict()}, "/tmp/xla_witness.pt")
+          ck = torch.load("/tmp/xla_witness.pt", map_location="cpu", weights_only=False)
+          fresh = TinyLM(Config(**ck["cfg"]))
+          fresh.load_state_dict(ck["state"])
+          print("checkpoint round-trip ok")
+          EOF

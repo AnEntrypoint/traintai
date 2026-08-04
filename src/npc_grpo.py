@@ -36,6 +36,7 @@ import torch
 import torch.nn.functional as F
 from tokenizers import Tokenizer
 
+from device import get_device, optimizer_step
 from model import Config, TinyLM
 from npc_eval import PERSONAS
 from npc_score import COMMON, INTENT_KEYS, ST_INTENT_KEYS, TEMPLATE_ECHO, drift_names, ngram_repeat, oracle_ok, parse_action, ACTION_RE
@@ -241,7 +242,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = Config(**ck["cfg"])
     model = TinyLM(cfg).to(device)
@@ -327,7 +328,7 @@ def main():
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step()
+        optimizer_step(opt, device)
 
         if step % 25 == 0 or step == args.steps - 1:
             best = texts[rewards.index(max(rewards))]
