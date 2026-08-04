@@ -7,6 +7,7 @@ comparable between models that share a tokenizer.
 import argparse
 import os
 import sys
+import time
 
 import numpy as np
 import requests
@@ -38,18 +39,28 @@ def download():
         print(f"already have {RAW}")
         return
     print(f"downloading first {SLICE_BYTES / 1e6:.0f}MB of TinyStories...")
-    got = 0
-    with requests.get(URL, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        with open(RAW, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1 << 20):
-                f.write(chunk)
-                got += len(chunk)
-                if got >= SLICE_BYTES:
-                    break
-                if got % (25 << 20) < (1 << 20):
-                    print(f"  {got / 1e6:.0f}MB", flush=True)
-    print(f"done, {got / 1e6:.0f}MB")
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        got = 0
+        try:
+            with requests.get(URL, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                with open(RAW, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1 << 20):
+                        f.write(chunk)
+                        got += len(chunk)
+                        if got >= SLICE_BYTES:
+                            break
+                        if got % (25 << 20) < (1 << 20):
+                            print(f"  {got / 1e6:.0f}MB", flush=True)
+            print(f"done, {got / 1e6:.0f}MB")
+            return
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries:
+                raise
+            wait = 2 ** attempt
+            print(f"download attempt {attempt} failed ({e}); retrying in {wait}s...", flush=True)
+            time.sleep(wait)
 
 
 def train_tokenizer(text):
