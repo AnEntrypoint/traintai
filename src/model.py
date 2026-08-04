@@ -86,6 +86,26 @@ def apply_rope(x, cos, sin):
     return torch.cat([x1 * cos - x2 * sin, x2 * cos + x1 * sin], dim=-1)
 
 
+def build_causal_padding_mask(pad_mask):
+    """pad_mask: (B, T) bool, True where a position is REAL content (not
+    padding). Returns a (B, 1, T, T) additive float mask for
+    F.scaled_dot_product_attention combining causal + padding: position i
+    may attend to position j iff j <= i AND pad_mask[j] is True. Left- or
+    right-padding both work since this only depends on which positions
+    are real, not where they sit in the sequence.
+
+    Only used by batched multi-sequence callers (e.g. sim_tournament.py
+    advancing several agents in lockstep); every existing single-sequence
+    caller passes attn_mask=None and gets exactly the prior is_causal=True
+    behavior, unchanged."""
+    B, T = pad_mask.shape
+    causal = torch.tril(torch.ones(T, T, dtype=torch.bool, device=pad_mask.device))
+    allowed = causal[None, :, :] & pad_mask[:, None, :]
+    mask = torch.zeros(B, 1, T, T, dtype=torch.float32, device=pad_mask.device)
+    mask.masked_fill_(~allowed.unsqueeze(1), float("-inf"))
+    return mask
+
+
 class Attention(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -93,7 +113,7 @@ class Attention(nn.Module):
         self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model, bias=False)
         self.proj = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, attn_mask=None):
         B, T, C = x.shape
         H, Dh = self.cfg.n_heads, self.cfg.head_dim
         q, k, v = self.qkv(x).split(C, dim=2)
@@ -101,7 +121,12 @@ class Attention(nn.Module):
         k = k.view(B, T, H, Dh).transpose(1, 2)
         v = v.view(B, T, H, Dh).transpose(1, 2)
         q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
-        o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        if attn_mask is None:
+            o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        else:
+            # attn_mask already encodes causal + padding (see build_causal_padding_mask);
+            # is_causal and an explicit mask are mutually exclusive in SDPA.
+            o = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         return self.proj(o.transpose(1, 2).contiguous().view(B, T, C))
 
 
@@ -134,8 +159,8 @@ class Block(nn.Module):
             self.ple_proj = nn.Linear(cfg.ple_dim, cfg.d_model, bias=False)
             self.ple_norm = RMSNorm(cfg.d_model)
 
-    def forward(self, x, cos, sin, ple=None):
-        x = x + self.attn(self.attn_norm(x), cos, sin)
+    def forward(self, x, cos, sin, ple=None, attn_mask=None):
+        x = x + self.attn(self.attn_norm(x), cos, sin, attn_mask)
         x = x + self.ffn(self.ffn_norm(x))
         if ple is not None:
             g = F.gelu(self.ple_gate(x))
@@ -196,7 +221,7 @@ class TinyLM(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.normal_(m.weight, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, attn_mask=None):
         cfg = self.cfg
         x = self.tok_emb(idx)
         if cfg.arm == "fatembed":
@@ -214,7 +239,7 @@ class TinyLM(nn.Module):
                 ple = (ple + table * (cfg.ple_dim**0.5)) * (2**-0.5)
 
         for i, block in enumerate(self.blocks):
-            x = block(x, self.cos, self.sin, None if ple is None else ple[:, :, i])
+            x = block(x, self.cos, self.sin, None if ple is None else ple[:, :, i], attn_mask)
 
         x = self.out_norm(x)
         logits = self.head(x)
