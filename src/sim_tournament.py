@@ -25,6 +25,17 @@ this way and is a permanent cautionary tale in this project).
 This does not replace npc_forge.py or npc_action_forge.py -- it is a new,
 additional flywheel source (data/npc/st_survival.jsonl) feeding the same
 st_prepare.py mixture pattern every other source already uses.
+
+Per user direction, the Kaggle-sourced datasets are also sparsely
+interleaved DURING this generation run itself (not only via
+st_prepare.py's separate per-round mixture step): every
+KAGGLE_INTERLEAVE_EVERY model-generated survivor rows written, one real
+row drawn from the already-converted kaggle_*.jsonl pools is written
+alongside it into the same st_survival.jsonl output. This does not alter
+branch gameplay/decisions -- it only changes what ends up in the output
+file, so a single tournament run's data is never 100% self-generated,
+the same anti-overfitting principle behind kaggle_wiki.jsonl's sparse
+mixture role, applied at generation time instead of only at prepare time.
 """
 
 import argparse
@@ -48,6 +59,40 @@ NPC = os.path.join(DATA, "npc")
 OUT = os.path.join(NPC, "st_survival.jsonl")
 
 VERBS = ("TRAVEL", "ATTACK", "TALK", "USE", "WAIT")
+
+# Real-data sources sparsely interleaved into the tournament's own output
+# during generation (see module docstring). Reuses whatever
+# kaggle_*_convert.py has already produced -- no new source, no new
+# decontamination logic, just a read of the existing capped/cleaned pools.
+KAGGLE_INTERLEAVE_SOURCES = ("kaggle_gamearena.jsonl", "kaggle_werewolf.jsonl",
+                             "kaggle_wiki.jsonl", "kaggle_fantasy.jsonl")
+KAGGLE_INTERLEAVE_EVERY = 20  # one real row per this many model-generated rows written
+
+
+def load_kaggle_interleave_pool(rng):
+    """Loads every available kaggle_*.jsonl source into one shuffled pool
+    to sample from during the run. Missing files (not yet converted) are
+    silently skipped -- this stays a best-effort enrichment, never a hard
+    dependency of the tournament running at all."""
+    pool = []
+    for fname in KAGGLE_INTERLEAVE_SOURCES:
+        path = os.path.join(NPC, fname)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                text = row.get("text")
+                if text:
+                    pool.append(text)
+    rng.shuffle(pool)
+    return pool
 
 
 class Branch:
@@ -214,6 +259,8 @@ def main():
     ap.add_argument("--tokens", type=int, default=80)
     ap.add_argument("--seed", type=int, default=97)
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--no-kaggle-interleave", action="store_true",
+                     help="skip sparsely mixing kaggle_*.jsonl rows into the output during this run")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -259,7 +306,9 @@ def main():
     n_keep = max(1, int(len(branches) * args.keep_frac))
     survivors = branches[:n_keep]
 
-    n_rows = 0
+    kaggle_pool = load_kaggle_interleave_pool(rng) if not args.no_kaggle_interleave else []
+    kaggle_idx = 0
+    n_rows = n_kaggle_rows = 0
     with open(args.out, "a", encoding="utf-8") as f:
         for b in survivors:
             for t in b.turns:
@@ -268,6 +317,10 @@ def main():
                 convo = f"{t['prompt']} {t['completion']}\nPlayer:\n"
                 f.write(json.dumps({"text": convo}) + "\n")
                 n_rows += 1
+                if kaggle_pool and n_rows % KAGGLE_INTERLEAVE_EVERY == 0:
+                    f.write(json.dumps({"text": kaggle_pool[kaggle_idx % len(kaggle_pool)]}) + "\n")
+                    kaggle_idx += 1
+                    n_kaggle_rows += 1
 
     fits = [b.fitness for b in branches]
     print(f"=== tournament ({len(branches)} branches, roster={args.roster}, "
@@ -276,7 +329,8 @@ def main():
           f"spread {max(fits) - min(fits)}")
     print(f"survivors kept: {len(survivors)}/{len(branches)} "
           f"({args.keep_frac:.0%} target)")
-    print(f"rows written: {n_rows} to {args.out}")
+    print(f"rows written: {n_rows} model-generated + {n_kaggle_rows} Kaggle-interleaved "
+          f"(1 per {KAGGLE_INTERLEAVE_EVERY}) to {args.out}")
     died = sum(1 for b in branches if b.died)
     print(f"branches that died: {died}/{len(branches)}")
 
