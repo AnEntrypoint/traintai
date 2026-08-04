@@ -10,13 +10,20 @@ Single-purpose SillyTavern NPC dialog model (28.9M params: 559K dense core +
 # always this form, or uv reverts the venv to CPU torch
 UV_NO_SYNC=1 uv run python src/<script>.py
 
-# one training round (SFT top-up + GRPO + forge measurement)
+# one training round (action-forge + SFT top-up + GRPO + forge measurement)
+UV_NO_SYNC=1 uv run python src/npc_action_forge.py <prev ckpt> --scenarios 800
 UV_NO_SYNC=1 uv run python src/st_prepare.py
 UV_NO_SYNC=1 uv run python src/train.py --arm ple --vocab 32768 --d-model 96 \
   --n-layers 6 --n-heads 4 --ple-dim 128 --fixed-ffn 66 --data-suffix _npc \
   --init-from <prev ckpt> --steps 300 --tag st-rN
 UV_NO_SYNC=1 uv run python src/npc_grpo.py runs/ple-st-rN-s0.pt --st 150 --steps 200
 UV_NO_SYNC=1 uv run python src/npc_forge.py runs/ple-st-rN-grpo.pt --cards 60 --k 6
+# all of the above, wired together (also runs action-forge before prepare):
+UV_NO_SYNC=1 uv run python src/round.py --prev <prev ckpt> --tag st-rN
+
+# gold multi-sentence chains (static combinatorial data, regenerate only
+# if st_world.py's item/place/event tables change -- fixed seed=23)
+UV_NO_SYNC=1 uv run python src/st_chains.py
 
 # runtime
 ./target/release/tai generate --model firmware/model/model.bin \

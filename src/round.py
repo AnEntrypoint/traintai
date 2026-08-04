@@ -45,6 +45,9 @@ def main():
     ap.add_argument("--steps", type=int, default=300)
     ap.add_argument("--grpo-steps", type=int, default=200)
     ap.add_argument("--skip-prepare", action="store_true")
+    ap.add_argument("--skip-action-forge", action="store_true",
+                     help="skip rejection-sampling oracle-matching actions from --prev before prepare")
+    ap.add_argument("--action-forge-scenarios", type=int, default=800)
     args = ap.parse_args()
     args.prev = os.path.abspath(args.prev)
 
@@ -58,6 +61,10 @@ def main():
             if run_stage("tokens", ["../data/prepare.py", "--vocab", "32768"],
                          os.path.join(RUNS, f"{args.tag}-tokens.log")):
                 return
+        if not args.skip_action_forge:
+            run_stage("actionforge", ["npc_action_forge.py", args.prev,
+                                       "--scenarios", str(args.action_forge_scenarios)],
+                       os.path.join(RUNS, f"{args.tag}-actionforge.log"))
         if run_stage("prepare", ["st_prepare.py"], os.path.join(RUNS, f"{args.tag}-prepare.log")):
             return
     rc = run_stage("sft", ["train.py", "--arm", "ple", "--vocab", "32768", "--d-model", "96",

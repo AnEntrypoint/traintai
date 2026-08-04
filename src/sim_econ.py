@@ -332,20 +332,29 @@ def convo_business(rng, keeper, desc, rumor):
     return "\n".join(lines) + "\n"
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rows", type=int, default=3000)
-    ap.add_argument("--scenarios", type=int, default=0)
-    ap.add_argument("--seed", type=int, default=41)
-    ap.add_argument("--out", default=None, help="scenario output path (default sim_scenarios.jsonl)")
-    args = ap.parse_args()
-    scen_path = args.out or SCEN
-    rng = random.Random(args.seed if not args.scenarios else args.seed + 1000)
+def convo_to_scenario(c):
+    """Split a full sim conversation into (prompt-up-to-last-Player-turn,
+    oracle_action, keeper). Returns None if there is no Player turn."""
+    header, rest = c.split("<START>\n", 1)
+    first = rest.split("\n", 1)[0]
+    body = rest.split("\n")[1:]
+    player_idx = [i for i, l in enumerate(body) if l.startswith("Player:")]
+    if not player_idx:
+        return None
+    last = player_idx[-1]
+    action = next((l for l in body[last:] if l.startswith("[")), None)
+    keeper = first.split(":", 1)[0]
+    prompt = header + "<START>\n" + first + "\n" + "\n".join(body[: last + 1]) + "\n" + keeper + ":"
+    return {"prompt": prompt, "oracle_action": action, "keeper": keeper}
 
-    out, scenarios = [], []
-    n_target = args.scenarios if args.scenarios else args.rows
-    world = World(rng)
-    for _ in range(n_target):
+
+def generate(rng, n, world=None, business=True):
+    """Generate n sim conversations (or fewer, if a branch yields None).
+    Shared by main()'s --rows/--scenarios paths and npc_action_forge.py,
+    so both draw from the exact same scenario distribution."""
+    world = world if world is not None else World(rng)
+    out = []
+    for _ in range(n):
         for _ in range(3):
             world.tick()
         shop = rng.choice(list(ITEMS))
@@ -364,25 +373,33 @@ def main():
             c = convo_player_sell(rng, shop, keeper, desc, world)
         elif r < 0.92:
             c = convo_turnin(rng, shop, keeper, desc, world)
-        else:
+        elif business:
             c = convo_business(rng, keeper, desc, rumor)
-        if c is None:
-            continue
-        if args.scenarios:
-            header = c.split("<START>\n", 1)[0]
-            rest = c.split("<START>\n", 1)[1]
-            first = rest.split("\n", 1)[0]
-            body = rest.split("\n")[1:]
-            player_idx = [i for i, l in enumerate(body) if l.startswith("Player:")]
-            if not player_idx:
-                continue
-            last = player_idx[-1]
-            action = next((l for l in body[last:] if l.startswith("[")), None)
-            keeper = first.split(":", 1)[0]
-            prompt = header + "<START>\n" + first + "\n" + "\n".join(body[: last + 1]) + "\n" + keeper + ":"
-            scenarios.append({"prompt": prompt, "oracle_action": action, "keeper": keeper})
         else:
+            c = None
+        if c is not None:
             out.append(c)
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rows", type=int, default=3000)
+    ap.add_argument("--scenarios", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=41)
+    ap.add_argument("--out", default=None, help="scenario output path (default sim_scenarios.jsonl)")
+    args = ap.parse_args()
+    scen_path = args.out or SCEN
+    rng = random.Random(args.seed if not args.scenarios else args.seed + 1000)
+
+    n_target = args.scenarios if args.scenarios else args.rows
+    world = World(rng)
+    convos = generate(rng, n_target, world=world, business=not args.scenarios)
+
+    if args.scenarios:
+        scenarios = [s for s in (convo_to_scenario(c) for c in convos) if s is not None]
+    else:
+        out = convos
 
     if args.scenarios:
         with open(scen_path, "w", encoding="utf-8") as f:
