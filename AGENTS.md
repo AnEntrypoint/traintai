@@ -499,3 +499,63 @@ kept: 8/32" selection is therefore not selecting anything meaningful yet
 is lengthening `horizon` (more ticks = more chance for real divergence)
 before touching the fitness formula itself, but this needs a real
 measured test, not a guess.
+
+## BALROG 10-round campaign, round 2: Crafter (2026-08-05)
+
+Following the custom-sim retirement, the campaign runs one BALROG game per
+round via `balrog_server.py` (multi-GPU OpenAI-compatible bridge) against
+BALROG's real `eval.py`. Round 1 (BabyAI, `heclgang/balrogsmoke`) landed
+clean: 8 concurrent workers x 8 episodes, "Overall Average Progression:
+12.50% +/- 11.69%".
+
+Round 2 (Crafter, `heclgang/balrogr2crafter`) hit two real, previously
+unknown BALROG-side bugs before producing a result:
+
+- **v1 crash -- `nle` is a hard import even for non-NLE games.**
+  `balrog/environments/crafter/crafter_env.py` imports
+  `GymV21CompatibilityV0` from `balrog.environments.wrappers`, whose
+  `__init__.py` unconditionally also imports `NLETimeLimit` from
+  `nle_timelimit.py`, which does `from nle.env.base import NLE` --
+  crashing every Crafter worker with `ModuleNotFoundError: No module
+  named 'nle'` even though Crafter has nothing to do with NetHack.
+  `balrog-nle` (the real NetHack C-extension) is confirmed unbuildable on
+  this Kaggle image (round-1 finding). Fix: direct read of
+  `nle_timelimit.py` showed the only symbol ever touched is
+  `NLE.StepStatus.ABORTED`, on a codepath (`NLETimeLimit.step()`)
+  Crafter's own `GymV21CompatibilityV0` wrapper never calls -- so a
+  minimal stub package (`nle.env.base.NLE.StepStatus` enum only) on
+  `PYTHONPATH` satisfies the import with zero behavioral risk. v2 got
+  past this crash cleanly (confirmed: `nle stub importable:
+  StepStatus.ABORTED` in the log).
+- **v2 crash -- `crafter.Env` has no `.seed()`.** BALROG's
+  `gym_compatibility.py:123` unconditionally calls
+  `self.gym_env.seed(seed)` on every `reset(seed=...)`, written against
+  an older gym-era `crafter.Env` that had `.seed()`. The `crafter`
+  version this Kaggle image's pip resolves (BALROG's own `setup.py` pins
+  no version) doesn't define `.seed()` at all, so the call falls through
+  gym's `__getattr__` passthrough to `AttributeError: 'Env' object has no
+  attribute 'seed'. Did you mean: '_seed'?` on every single episode reset
+  (`average_progress: 0.0`, zero real episodes ran). Fix: a
+  `sitecustomize.py` on the same stub `PYTHONPATH` (auto-imported by
+  every `python3` process, including `eval.py`'s forked workers) that
+  monkeypatches a no-op-safe `crafter.Env.seed` in when missing.
+
+**v3 (fixed) real result:** both crashes gone, 8 real Crafter episodes
+completed end to end. `crafter_summary.json`: `episodes_played: 8`,
+`average_steps: 144.625`, `progression_percentage: 0.0`,
+`input_tokens: 573872`, `output_tokens: 18294`. Per-episode rewards
+clustered tightly around **-0.9** (BALROG log: `Episode done with reward:
+-0.9`/`-0.8999...` x8) -- the model is reaching a consistent early-failure
+state each episode (144 avg steps before episode end, well short of
+Crafter's `max_episode_steps` default) rather than random/degenerate
+behavior, but achieves zero real task progression. A real, secondary
+issue observed in the same run (not yet root-caused): repeated
+`Retryable error during api_call: Empty content in response` from
+`balrog_server.py` -- the model emits a genuinely empty completion
+(`completion_tokens: 1`, i.e. just the EOT token) on a real fraction of
+Crafter prompts; BALROG's own client-side retry logic absorbed these
+(5 retries) so episodes still completed, but this is worth investigating
+before round 3 if the same pattern recurs on a different game, since an
+empty first-token response is a real, checkable training-data gap (the
+model was never trained on Crafter-shaped prompts specifically -- SFT
+data through r23 has zero Crafter-style status-block prompts).
