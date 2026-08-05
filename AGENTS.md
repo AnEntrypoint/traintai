@@ -729,3 +729,75 @@ findings from rounds 2 and 4) rather than anything specific to
 traintai's own code -- worth remembering as the default first hypothesis
 for any future "ModuleNotFoundError inside an isolated pip build" this
 campaign hits again.
+
+## BALROG 10-round campaign, round 6: NLE/NetHack (2026-08-05)
+
+Round 6 (`heclgang/balrogr6nle`) reused round 5's proven `balrog-nle`
+build recipe (apt-installed real ELF `cmake`) verbatim -- no new build
+issues, confirming that fix generalizes to NLE itself (the heaviest,
+original game the `nle` package exists for). Real result:
+`episodes_played: 8`, `average_steps: 151.0`, `progression_percentage:
+0.0`, `input_tokens: 599168`, `output_tokens: 19131`, `eval.log` clean
+(zero tracebacks). `eval.max_steps_per_episode` was capped to 500 (NLE's
+own default is 100,000) since the model has no NLE training data --
+consistent with every other round, it never approached that cap. The
+`Empty content in response` retry pattern recurred again (12 occurrences
+across 8 episodes), now confirmed on a FIFTH distinct game.
+
+**This completes the core 6-game BALROG rotation** (BabyAI, Crafter,
+BabaIsAI, TextWorld, MiniHack, NLE), all with real measured 0%
+progression. Real, repeated evidence across all 6 games converges on one
+conclusion: the model has zero BALROG-shaped training data anywhere in
+its SFT mixture, so it cannot act competently in any of these
+environments on first exposure, and on a real fraction of turns emits an
+empty completion entirely (a genuine training-data gap, not a
+per-game/per-engine quirk).
+
+## Scaling move: real BALROG expert-demonstration SFT data (2026-08-05)
+
+Per the explicit standing instruction to scale according to what this
+campaign observed (uniform 0% progression + recurring empty-completion
+bug across all 6 games), the correct next lever is training data, not
+another eval round. BALROG ships real expert-demonstration trajectories
+(`docs/few_shot_learning.md`: `gdown 1TQbrqMSC5K_SNx9tta1Tlhtg8flSIGaJ`
+-> `records.zip`, real `.npz` files per game/task with
+`action`/`reward`/`terminated`/`truncated` arrays + per-step
+observations, confirmed via direct read of `balrog/dataset.py`'s
+`InContextDataset`).
+
+Built `src/balrog_demo_convert.py`: parses an extracted `records.zip`
+directory, replays each trajectory mirroring BALROG's own
+`load_in_context_learning_episode()` accumulation logic exactly (first
+entry is reset-only/no-action, stop at first `done`), reconstructs the
+real per-game instruction prompts (verbatim from each
+`balrog/environments/<env>/__init__.py` -- BabyAI's raw mission text
+isn't recoverable from the `.npz` alone, so it falls back to a documented
+generic phrase, a real known limitation), builds the message sequence
+matching `HistoryPromptBuilder.get_prompt()`'s real shape, and flattens
+via `build_prompt()` imported directly from `balrog_server.py` (not
+reimplemented, guaranteeing exact format parity with what the model is
+actually served at inference time). Truncates left-to-fit `seq_len`,
+re-anchoring a clean `assistant:` cue after truncation. Writes
+`data/npc/balrog_demos.jsonl`, one row per trajectory step, capped via
+`--cap` (default 20000). Wired into `st_prepare.py` via a new
+`BALROG_DEMOS_CAP = 3000` constant, following the exact existing
+`kaggle_werewolf`/`st_action_forge` guarded-block pattern (checked into
+the final mixture-summary print line).
+
+Verified locally with synthetic `.npz` fixtures matching the real schema
+(babyai/crafter/minihack): correct per-game episode/kept/skipped counts,
+correct `assistant:`-cue re-anchoring after left-truncation (confirmed
+explicitly on Crafter/MiniHack's longer instruction prompts, which
+exceed `seq_len=512` on early-trajectory steps), `--seq-len 3` correctly
+forces the all-skip path with no broken rows emitted, `--cap 3` stops
+exactly at 3 rows, and a full real `st_prepare.py main()` run correctly
+counted `balrog_demos 7` into `total 23142` and wrote real
+`train_npc.bin`/`val_npc.bin`. No fixture/test residue left in the repo.
+
+**Not yet done** (the actual real-data run): download the real
+`records.zip` on a Kaggle kernel (this environment can't reach Google
+Drive reliably), run `balrog_demo_convert.py` against it for real numbers
+(not the synthetic fixture counts above), run one full SFT round with
+`balrog_demos.jsonl` in the mixture, and re-measure `sim_eval.py` plus a
+fresh BALROG eval round per game to get a real before/after progression
+delta -- this is the next concrete step.

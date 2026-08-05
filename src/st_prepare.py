@@ -80,6 +80,7 @@ KAGGLE_FANTASY_CAP = 3000
 KAGGLE_WIKI_CAP = 900  # sparse interleave target ~5% of a typical round's mixture, per Distribution Smoothing literature
 KAGGLE_GAMEARENA_CAP = 900  # same sparse ~5% role, combined across all 13 Kaggle Game Arena datasets -- see kaggle_gamearena_convert.py
 KAGGLE_WEREWOLF_CAP = 2000  # Werewolf's own larger, separately-capped allocation, IN ADDITION TO its share of kaggle_gamearena.jsonl's combined pool
+BALROG_DEMOS_CAP = 3000  # balrog_demo_convert.py output: real BALROG expert-demo trajectories re-rendered as "Observation: ... assistant: <action>" SFT rows, so the model sees this prompt shape at least once before a BALROG eval round instead of only ever being evaluated on it untrained
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -266,12 +267,23 @@ def main():
                 if n_kaggle_werewolf >= KAGGLE_WEREWOLF_CAP:
                     break
 
+    n_balrog_demos = 0
+    balrog_demos_path = os.path.join(NPC, "balrog_demos.jsonl")
+    if os.path.exists(balrog_demos_path):
+        for row in read_jsonl(balrog_demos_path):
+            if clean(row["text"]):
+                texts.append(row["text"])
+                n_balrog_demos += 1
+                if n_balrog_demos >= BALROG_DEMOS_CAP:
+                    break
+
     tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
     texts.extend(tmpl[:TEMPLATE_CAP])
     print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
           f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
           f"kaggle_fantasy {n_kaggle_fantasy} | kaggle_wiki {n_kaggle_wiki} | "
           f"kaggle_gamearena {n_kaggle_gamearena} | kaggle_werewolf {n_kaggle_werewolf} | "
+          f"balrog_demos {n_balrog_demos} | "
           f"template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
     ids = []
