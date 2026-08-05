@@ -599,3 +599,68 @@ direct/local action tasks) -- zero progression here is consistent with
 a 28.9M-param model with no BabaIsAI-shaped training data at all, same
 underlying cause named in round 2 (the model has never seen this game's
 prompt/action shape in its SFT mixture).
+
+## BALROG 10-round campaign, round 4: TextWorld (2026-08-05)
+
+Round 4 (`heclgang/balrogr4textworld`) took 4 kernel versions to reach a
+clean run -- the most iteration any round has needed so far, each crash
+a real, distinct, previously-unknown bug root-caused with direct source
+reads (and in two cases, direct GitHub source fetches of third-party
+packages, not guesses):
+
+- **v1 crash -- same shared-`nle`-import bug as rounds 2-3, preemptively
+  fixed from the start** (TextWorld's own `textworld_env.py` also imports
+  `GymV21CompatibilityV0`). What v1 actually hit instead:
+  `ImportError: attempted relative import beyond top-level package`
+  inside `tatsu/infos.py`'s `from ..input import Cursor`. TextWorld (a
+  `balrog-ai/TextWorld` git fork) depends on `tatsu`, a PEG-parser
+  library, for its game-logic grammar.
+- **v2 crash -- same error, unchanged.** First hypothesis (an
+  install-ordering race, matching a real historical Microsoft TextWorld
+  fix commit `e92274e` from 2018) was wrong: explicitly pre-installing
+  `tatsu>=5.8.3` before the TextWorld fork did not help, because pip's
+  resolver still re-resolved `tatsu` during the fork's own install.
+- **v3 fix attempt -- real root cause found by fetching the actual
+  upstream `tatsu` source** (`github.com/neogeny/TatSu`, both `main` and
+  the `v5.8.3` tag, directly, not from memory): this is a **live, current
+  bug in upstream `tatsu` itself**. `tatsu/infos.py` lives directly
+  inside the `tatsu/` package (one level of nesting); a later refactor
+  moved `input.py` into a sibling `tatsu/input/` subpackage (also one
+  level down) without fixing `infos.py`'s own relative import, which
+  still reads `from ..input import Cursor` (two dots) -- walking
+  **outside** the top-level `tatsu` package entirely, an import that
+  cannot succeed under any install order. Confirmed absent at the
+  `v5.8.3` git tag (pre-refactor code shape, matching Microsoft's
+  official tested pin). Fixed via an exact `tatsu==5.8.3` pin plus
+  `--no-deps` on the TextWorld fork install (stopping pip from
+  "helpfully" re-resolving `tatsu` past the pin to satisfy the fork's
+  own open-ended `tatsu>=5.8.3` constraint) -- but v3 introduced a new
+  crash: `--no-deps` also suppressed TextWorld's other real dependencies,
+  surfacing `ModuleNotFoundError: No module named 'mementos'`
+  (`textworld.logic.__init__` imports it directly).
+- **v4 fix -- fetched the fork's real `requirements.txt` directly**
+  (`github.com/balrog-ai/TextWorld/main/requirements.txt`) and installed
+  every real dependency (`tqdm`/`cffi`/`networkx`/`more_itertools`/
+  `hashids`/`jericho`/`mementos`/`termcolor`/`prompt_toolkit`) explicitly,
+  excluding only `tatsu` (already exactly pinned) and `numpy` (already
+  pinned to `1.26.4` elsewhere -- an unconstrained `numpy>=1.14.5` here
+  could have silently reintroduced the `gym==0.23`/`numpy>=2.0` conflict
+  this project deliberately keeps BALROG's environment isolated from),
+  keeping `--no-deps` on the fork install itself so it still cannot
+  touch either pin.
+
+**v4 (fixed) real result:** all three of TextWorld's default tasks ran
+cleanly end to end -- `textworld_summary.json`: `episodes_played: 24`
+(8 each of `coin_collector`/`treasure_hunter`/`the_cooking_game`),
+`average_steps: 80.0`, `progression_percentage: 0.0` across every task,
+`input_tokens: 947745`, `output_tokens: 30255`. Every episode logged
+`reward: 0.0` (`eval.log`, 24/24 "Episode done" lines, zero tracebacks).
+The same `Retryable error during api_call: Empty content in response`
+pattern first seen in round 2 (Crafter) recurred here too (4 occurrences
+across 24 episodes, all absorbed by BALROG's own retry logic) -- now
+confirmed present on a THIRD distinct game, strengthening the round-2
+hypothesis that this is a real, general training-data gap (the model
+emits an empty first token on some real fraction of any non-Kaggle-SFT-
+shaped prompt) rather than a Crafter-specific quirk. Still not
+root-caused or fixed; worth prioritizing investigation once all 10
+rounds have established the full baseline picture.
