@@ -138,15 +138,20 @@ class Handler(BaseHTTPRequestHandler):
         # truncate from the left (keep the most recent context) rather
         # than crash or silently wrap. BALROG callers can request
         # max_tokens far larger than our seq_len (its config.yaml default
-        # is 8192); clamp the actual generation budget to what the
-        # context window can hold, and always reserve at least 1 prompt
-        # token -- an empty prompt crashes batched_generate's
-        # logits[:, -1, :] on a zero-length sequence dimension (a real
-        # bug hit on the first live BALROG episode, root-caused to
-        # max_tokens > seq_len making the truncation slice negative and
-        # emptying the prompt entirely).
+        # is 8192); clamp to that AND to a real action-length budget.
+        #
+        # A real measured throughput problem this session: BALROG's
+        # naive.py/env_wrapper.py only ever need a few words (one action
+        # from a short language_action_space list, e.g. "go forward") per
+        # response -- generating hundreds of tokens per request just to
+        # discard everything after the first line/action word wastes real
+        # GPU time. Kernel v6 measured ~72-105s/episode at 64 steps with
+        # the old effectively-unbounded (seq_len-1) budget; clamping to a
+        # real action-response length should cut per-request generation
+        # time substantially without losing any information BALROG uses.
+        ACTION_RESPONSE_MAX_TOKENS = 16
         seq_len = STATE["cfg"].seq_len
-        max_tokens = min(max_tokens, seq_len - 1)
+        max_tokens = min(max_tokens, seq_len - 1, ACTION_RESPONSE_MAX_TOKENS)
         budget = max(seq_len - max_tokens, 1)
         if len(ids) > budget:
             ids = ids[-budget:]
