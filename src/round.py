@@ -88,7 +88,8 @@ def check_tag_collision(tag):
 
 def run_one_round(tag, prev, steps, grpo_steps, skip_prepare, skip_action_forge,
                    action_forge_scenarios, sft_seed=None, skip_tournament=False,
-                   tournament_roster=8, tournament_ticks=8, tournament_k=4):
+                   tournament_roster=8, tournament_ticks=8, tournament_k=4,
+                   sft_batch_size=None, sft_lr=None):
     """Runs stages 1-6 for a single tag/lineage. Returns a dict with the
     checkpoint path and, if forge/simeval produced parseable numbers, the
     measured fitness fields -- or None if the round failed before
@@ -129,6 +130,18 @@ def run_one_round(tag, prev, steps, grpo_steps, skip_prepare, skip_action_forge,
                "--steps", str(steps), "--tag", tag]
     if sft_seed is not None:
         sft_cmd += ["--seed", str(sft_seed)]
+    if sft_batch_size is not None:
+        sft_cmd += ["--batch-size", str(sft_batch_size)]
+        if sft_lr is not None:
+            sft_cmd += ["--lr", str(sft_lr)]
+        else:
+            # Linear LR scaling (Goyal et al.): preserves the r16-r24
+            # recipe's training dynamics when batch size changes rather
+            # than silently diverging from it -- default train.py lr is
+            # 1e-3 at batch_size=32, so a larger batch scales lr by the
+            # same ratio unless the caller passes an explicit --sft-lr.
+            scaled_lr = 1e-3 * (sft_batch_size / 32)
+            sft_cmd += ["--lr", str(scaled_lr)]
     rc = run_stage("sft", sft_cmd, os.path.join(RUNS, f"{tag}.log"))
     if rc:
         return None
@@ -314,6 +327,13 @@ def main():
     ap.add_argument("--hours", type=float, default=None,
                      help="with --branches > 1, keep auto-promoting generations until this many wall-clock hours elapse")
     ap.add_argument("--seed", type=int, default=7, help="promotion-choice RNG seed")
+    ap.add_argument("--sft-batch-size", type=int, default=None,
+                     help="override train.py's SFT batch size (default 32). Measured this session: "
+                          "32 -> 9.7GB peak, extrapolated ~44 -> ~13.3GB on a real 16GB T4 (unverified "
+                          "on hardware -- measured on a 6GB local card and extrapolated). --sft-lr is "
+                          "auto-scaled linearly unless also given explicitly.")
+    ap.add_argument("--sft-lr", type=float, default=None,
+                     help="override the auto-scaled SFT learning rate when --sft-batch-size is set")
     args = ap.parse_args()
     args.prev = os.path.abspath(args.prev)
 
@@ -321,7 +341,8 @@ def main():
         result = run_one_round(args.tag, args.prev, args.steps, args.grpo_steps,
                                 args.skip_prepare, args.skip_action_forge,
                                 args.action_forge_scenarios,
-                                skip_tournament=args.skip_tournament)
+                                skip_tournament=args.skip_tournament,
+                                sft_batch_size=args.sft_batch_size, sft_lr=args.sft_lr)
         if result:
             print_round_summary(args.tag)
         return
