@@ -1,6 +1,6 @@
-"""Minimal OpenAI-compatible /v1/chat/completions server wrapping our
-TinyLM checkpoint, so BALROG (github.com/balrog-ai/BALROG) can drive it
-as a game agent with zero BALROG code changes.
+"""OpenAI-compatible /v1/chat/completions server wrapping our TinyLM
+checkpoint, so BALROG (github.com/balrog-ai/BALROG) can drive it as a
+game agent with zero BALROG code changes.
 
 Confirmed by direct read of BALROG's balrog/client.py: OpenAIWrapper's
 client_name containing "vllm" calls OpenAI(api_key="EMPTY",
@@ -13,18 +13,31 @@ implements exactly that request/response shape and nothing else.
 Reuses batched_decode.py's real batched_generate() decode loop (measured
 2.86x speedup via left-padding + causal-padding masks this session)
 rather than a second generation implementation.
+
+Multi-GPU inference: BALROG's own eval.num_workers spawns many parallel
+environment processes, each firing HTTP requests concurrently -- the
+real throughput lever for a tiny (28.9M-param) model is batching many
+of those concurrent requests into ONE real forward pass, replicated
+across every visible CUDA device, not routing one request per GPU.
+Real requests are queued as they arrive; a background worker thread per
+GPU drains the queue in micro-batches (bounded by --max-batch and a
+short collection window) and runs batched_generate() once per micro-
+batch, so N simultaneous BALROG requests become ceil(N / num_gpus /
+max_batch) real GPU calls instead of N serial ones.
 """
 
 import argparse
 import json
 import os
+import queue
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import torch
 from tokenizers import Tokenizer
 
 from batched_decode import batched_generate
-from device import get_device
 from model import Config, TinyLM
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +63,56 @@ def build_prompt(messages):
         lines.append(f"{role}: {text}")
     lines.append("assistant:")
     return "\n".join(lines)
+
+
+class InferenceWorker(threading.Thread):
+    """One worker per GPU. Pulls queued requests, forms a micro-batch
+    (up to max_batch items, or whatever has arrived within
+    batch_window_s of the first item -- never blocks indefinitely
+    waiting for a full batch, since BALROG's request rate is not
+    predictable), and runs ONE real batched_generate() call per batch on
+    this worker's own device. Each queued item carries its own
+    threading.Event + result slot so the HTTP handler thread that
+    enqueued it can block until its specific completion is ready,
+    without the batching logic needing per-request return channels."""
+
+    def __init__(self, device, model, max_batch, batch_window_s, work_queue):
+        super().__init__(daemon=True)
+        self.device = device
+        self.model = model
+        self.max_batch = max_batch
+        self.batch_window_s = batch_window_s
+        self.queue = work_queue
+
+    def run(self):
+        while True:
+            batch = [self.queue.get()]
+            deadline = time.monotonic() + self.batch_window_s
+            while len(batch) < self.max_batch:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    batch.append(self.queue.get(timeout=remaining))
+                except queue.Empty:
+                    break
+
+            prompt_ids_list = [item["ids"] for item in batch]
+            temps = [item["temperature"] for item in batch]
+            max_tokens = max(item["max_tokens"] for item in batch)
+
+            try:
+                gens = batched_generate(
+                    self.model, prompt_ids_list, max_tokens, temps, top_k=40, device=self.device
+                )
+                for item, gen in zip(batch, gens):
+                    item["result"] = gen[: item["max_tokens"]]
+            except Exception as e:
+                for item in batch:
+                    item["error"] = str(e)
+            finally:
+                for item in batch:
+                    item["done"].set()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,10 +151,29 @@ class Handler(BaseHTTPRequestHandler):
         if len(ids) > budget:
             ids = ids[-budget:]
 
-        gen = batched_generate(
-            STATE["model"], [ids], max_tokens, [temperature], top_k=40, device=STATE["device"]
-        )[0]
+        # Round-robin this request onto one of the per-GPU queues -- each
+        # queue's worker thread batches whatever concurrent requests land
+        # together into one real forward pass on that GPU (see
+        # InferenceWorker). This is where "many BALROG workers" turns
+        # into real throughput: N simultaneous requests split across
+        # num_gpus queues, each queue batching up to max_batch at once.
+        queues = STATE["queues"]
+        qidx = STATE["next_queue"][0] % len(queues)
+        STATE["next_queue"][0] += 1
+        item = {
+            "ids": ids, "max_tokens": max_tokens, "temperature": temperature,
+            "done": threading.Event(), "result": None, "error": None,
+        }
+        queues[qidx].put(item)
+        item["done"].wait()
 
+        if item["error"] is not None:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": item["error"]}).encode("utf-8"))
+            return
+
+        gen = item["result"]
         eot = STATE["eot_id"]
         stop_reason = "length"
         if eot in gen:
@@ -124,29 +206,53 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+def resolve_devices():
+    """Every visible CUDA device, one inference worker each. Falls back
+    to a single CPU/MPS device (via device.get_device()) when no CUDA
+    devices are visible, matching every other script's device-selection
+    fallback in this project."""
+    if torch.cuda.is_available():
+        return [torch.device(f"cuda:{i}") for i in range(torch.cuda.device_count())]
+    from device import get_device
+    return [get_device()]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ckpt")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--max-batch", type=int, default=64,
+                     help="max concurrent requests folded into one forward pass per GPU")
+    ap.add_argument("--batch-window-ms", type=int, default=15,
+                     help="how long a worker waits for more requests to join a forming "
+                          "batch after the first one arrives, before running it anyway")
     args = ap.parse_args()
 
-    device = get_device()
+    devices = resolve_devices()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = Config(**ck["cfg"])
-    model = TinyLM(cfg).to(device)
-    model.load_state_dict(ck["state"])
-    model.eval()
     tok = Tokenizer.from_file(os.path.join(DATA, "bpe32768.json"))
 
-    STATE["model"] = model
+    queues = []
+    for device in devices:
+        model = TinyLM(cfg).to(device)
+        model.load_state_dict(ck["state"])
+        model.eval()
+        q = queue.Queue()
+        InferenceWorker(device, model, args.max_batch, args.batch_window_ms / 1000, q).start()
+        queues.append(q)
+
     STATE["cfg"] = cfg
     STATE["tok"] = tok
-    STATE["device"] = device
+    STATE["queues"] = queues
+    STATE["next_queue"] = [0]
     STATE["eot_id"] = tok.token_to_id("<|endoftext|>")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"balrog_server: serving {args.ckpt} on http://{args.host}:{args.port}/v1/chat/completions", flush=True)
+    print(f"balrog_server: serving {args.ckpt} on http://{args.host}:{args.port}/v1/chat/completions "
+          f"across {len(devices)} device(s) ({[str(d) for d in devices]}), "
+          f"max_batch={args.max_batch} batch_window={args.batch_window_ms}ms", flush=True)
     server.serve_forever()
 
 
