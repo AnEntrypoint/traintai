@@ -853,3 +853,30 @@ is confirmed empty/near-empty, root-cause whether it's the
 the real before/after eval -- this round's 0% result is not yet a
 verdict on whether BALROG expert-demo SFT data helps, only a verdict
 that this run never actually tested it.
+
+## The real root cause of both v1 and v2's failures: unpushed commits (2026-08-05)
+
+v2 (the output-size fix above) still failed, but with a directly
+diagnostic error this time: `python3: can't open file
+'/kaggle/working/traintai/src/balrog_demo_convert.py': [Errno 2] No such
+file or directory`. Checked `git log origin/main..HEAD` -- **every single
+commit from `f14e954` (round 2 results) through `fdbad27` (6 commits
+total, spanning this entire session's round 2-6 writeups and the new
+`balrog_demo_convert.py`/`st_prepare.py` wiring) had only ever been
+committed locally, never `git push`ed to `origin/main`.** Every Kaggle
+kernel this session clones `traintai` fresh via `git clone
+https://github.com/AnEntrypoint/traintai` -- meaning every round's
+kernel was cloning a remote frozen at commit `89bd9b6`, 6 commits stale,
+missing the entire `balrog_demo_convert.py` file this run depended on.
+
+Pushed all 6 commits (`git push origin main`, fast-forward,
+`89bd9b6..fdbad27`) and re-pushed the kernel as v3. Rounds 2-6's own
+BALROG-eval results are unaffected by this (no round-2-through-6 kernel
+depended on any traintai-side code change made mid-session -- `AGENTS.md`
+writeups and the new converter script are the only things that were
+ever unpushed, and no earlier round's kernel needed either), but this
+was a real, silent gap the whole session: any future kernel expecting a
+same-session code change to `src/` will fail the identical way unless
+the push actually happens. Going forward, treat "commit" and "push" as
+one atomic step for any commit a same-session Kaggle kernel will depend
+on -- do not defer the push.
