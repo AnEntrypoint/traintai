@@ -664,3 +664,68 @@ emits an empty first token on some real fraction of any non-Kaggle-SFT-
 shaped prompt) rather than a Crafter-specific quirk. Still not
 root-caused or fixed; worth prioritizing investigation once all 10
 rounds have established the full baseline picture.
+
+## BALROG 10-round campaign, round 5: MiniHack (2026-08-05)
+
+Round 5 (`heclgang/balrogr5minihack`) is the first round needing a REAL
+working `nle`/NetHack C-extension build (`balrog-nle==0.9.0`) rather than
+the lightweight stub used in rounds 2-4 -- confirmed by direct source
+read: `minihack_env.py` imports `nle.language_wrapper` directly. Took 6
+kernel versions, each a real, distinct, previously-unknown bug:
+
+- **v1** -- `balrog-nle`'s wheel build failed with `ModuleNotFoundError:
+  No module named 'nle'` (a misleading symptom: pip's own post-build
+  sanity-import failing, not the real cause) and no real error text
+  captured (`tail`-piped output truncated pip's actual failure reason).
+- **v2** -- `pip install -v` with untruncated output revealed the real
+  error: `ModuleNotFoundError: No module named 'cmake'` INSIDE
+  balrog-nle's own isolated build venv, from its `find_executable`-based
+  `cmake` invocation.
+- **v3** -- hypothesized this was our own redundant `pip install cmake`
+  cell shadowing a working system cmake; removed it. Did not fix it --
+  same error recurred, because `balrog-nle`'s own `pyproject.toml`
+  declares `cmake` as a `build-system.requires` entry, so pip re-resolves
+  and reinstalls its own `cmake` PyPI package as part of building
+  balrog-nle regardless of what any earlier cell does.
+- **v5** -- attempted to snapshot the "working" cmake binary found via
+  `readlink -f $(command -v cmake)` to a private path. Still failed with
+  the identical error, even from the snapshot copy -- because the
+  snapshotted file was itself the broken pip-wrapper script all along,
+  not a real compiled binary; `apt-get install` had never actually
+  included `cmake` in its package list in any prior version (only
+  `build-essential`/`autoconf`/`libtool`/`pkg-config`/`flex`/`bison`/
+  `libbz2-dev`/`git`), so there was no real ELF cmake anywhere on the
+  image to begin with. `/usr/local/bin/cmake`'s "CMake suite maintained
+  by Kitware" version-string output (present since v1) was itself
+  produced by the working pip wrapper -- it only breaks when invoked
+  from inside a pip-isolated build venv lacking the `cmake` Python
+  package, which is exactly balrog-nle's own build context.
+- **v6 (fixed)** -- explicitly `apt-get install cmake`, confirmed via
+  `file /usr/bin/cmake` to be a genuine `ELF 64-bit LSB pie executable`
+  (distinct from `/usr/local/bin/cmake`'s `Python script, ASCII text
+  executable`), prioritized on `PATH`. `balrog-nle` built successfully
+  (`pip exit code: 0`), `nle`/`minihack` imported cleanly.
+
+**v6 (fixed) real result:** 48 real MiniHack episodes across 6 tasks
+(`MiniHack-MazeWalk-9x9-v0`, `-15x15-v0`, `-Quest-Medium-v0`,
+`-Quest-Easy-v0`, `-CorridorBattle-Dark-v0`, `-Corridor-R3-v0`, 8 each).
+`progression_percentage: 0.0` across every task, `input_tokens:
+2,380,800`, `output_tokens: 75,370`. Per-episode rewards clustered around
+**-0.99 to -1.0** (`eval.log`: dozens of `Episode done with reward:
+-0.99.../-1.0...`) -- NLE's real death/failure penalty structure, a
+consistent signal rather than noise. The same recurring `Retryable error
+during api_call: Empty content in response` pattern from rounds 2 and 4
+appeared again here, now confirmed on a fourth distinct game -- strong,
+repeated evidence this is a real, general training-data gap (the model
+has zero SFT exposure to any BALROG-game-shaped prompt), not a
+per-game quirk; still not yet root-caused or fixed, and now the clear
+next priority once the campaign's round-by-round baseline is complete.
+
+This round is the strongest evidence yet that BALROG's build-tooling
+issues are systematically about **narrow package name collisions
+between system and pip-provided tools with the same binary name**
+(`cmake` here, matching the earlier `tatsu`/`nle`-stub install-order
+findings from rounds 2 and 4) rather than anything specific to
+traintai's own code -- worth remembering as the default first hypothesis
+for any future "ModuleNotFoundError inside an isolated pip build" this
+campaign hits again.
