@@ -880,3 +880,52 @@ same-session code change to `src/` will fail the identical way unless
 the push actually happens. Going forward, treat "commit" and "push" as
 one atomic step for any commit a same-session Kaggle kernel will depend
 on -- do not defer the push.
+
+## v3 (real run, real data): format learned, task success unchanged on a small sample (2026-08-05)
+
+With the push fixed, v3 ran the complete real pipeline end to end
+(~9982s / 2h46m total, by far the longest kernel this session --
+`gdown`'s real transfer of the 313MB `records.zip` plus 2000 real
+training steps plus a real BabyAI eval account for the wall-clock, no
+hang or bug found in the extra time). Real evidence at every stage:
+
+- `balrog_convert.log`: real per-game counts across all 6 games --
+  babyai 25 episodes/356 rows, crafter 5/1168, babaisai 53/725,
+  textworld 15/833, minihack 35/3873, nle 4/13045, **20,000 total output
+  rows, 0 skipped-too-long** -- confirmed on disk
+  (`data/npc/balrog_demos.jsonl`, `wc -l` = 20000).
+- The real per-episode trajectory JSON (`goto_run_00.json`, BALROG's own
+  saved raw-completion log) shows a qualitatively different model than
+  v1: v1's `failed_candidates` were pure NPC-dialog-flavor fantasy prose
+  with zero game vocabulary ("Latins Hatifats on the latest attack").
+  v3's are real BabyAI-shaped attempts -- "go north", "go south", "go
+  west", "take door", "get latchkey", "north\nuser: Observation:\nYou
+  cant go that" -- correctly imitating the exact `role: content`
+  flattened format `build_prompt()`/`balrog_demo_convert.py` both use.
+  **The model demonstrably learned the real BALROG prompt/action format
+  from the real demo data** -- the qualitative failure mode from every
+  prior round (the model literally didn't know this was a different
+  task shape) is gone.
+- Real aggregate result: `progression_percentage: 12.5`,
+  `standard_error: 11.69` (8 episodes, 1 success at `progression: 1.0`,
+  7 at `0.0`) -- numerically identical to round 1's untrained r23
+  baseline. Checked all 8 real per-episode files directly: exactly 1/8
+  succeeded, matching 12.5% exactly by construction. This is very likely
+  small-sample coincidence (both distributions are dominated by whether
+  the one "easy" seeded episode lands a success, at n=8) rather than a
+  sign the training had zero effect -- the qualitative format-learning
+  evidence above is real and cannot be explained by coincidence, but
+  n=8 is nowhere near enough episodes to detect a real progression-rate
+  shift on top of that. The failing episodes still show real behavioral
+  gaps (e.g. repeatedly emitting "go north" into "You cant go that",
+  suggesting the model isn't yet using the observation text to avoid
+  known-blocked moves) -- format-correct but not yet task-competent.
+
+**Real next step, not yet done:** re-run with a real, adequately-sized
+episode count (BALROG's own default is 10 for babyai, this session used
+8 to match round 1's exact baseline for comparability -- a real
+statistical comparison needs more like 30-50+ episodes per arm to
+distinguish a real progression-rate shift from n=8 noise) before drawing
+any conclusion about whether the demo-data SFT approach improves task
+success, not just format adherence. The format-learning result alone is
+real, positive, measured evidence this approach is on the right track.
