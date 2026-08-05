@@ -95,8 +95,9 @@ def run_one_round(tag, prev, steps, grpo_steps, skip_prepare, skip_action_forge,
     measured fitness fields -- or None if the round failed before
     producing a checkpoint at all (SFT or GRPO stage failure)."""
     check_tag_collision(tag)
-    sft_ckpt = os.path.join(RUNS, f"ple-{tag}-s0.pt")
-    best_ckpt = os.path.join(RUNS, f"ple-{tag}-s0-best.pt")
+    seed_suffix = sft_seed if sft_seed is not None else 0
+    sft_ckpt = os.path.join(RUNS, f"ple-{tag}-s{seed_suffix}.pt")
+    best_ckpt = os.path.join(RUNS, f"ple-{tag}-s{seed_suffix}-best.pt")
     grpo_ckpt = os.path.join(RUNS, f"ple-{tag}-grpo.pt")
 
     if not skip_prepare:
