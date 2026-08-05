@@ -559,3 +559,43 @@ before round 3 if the same pattern recurs on a different game, since an
 empty first-token response is a real, checkable training-data gap (the
 model was never trained on Crafter-shaped prompts specifically -- SFT
 data through r23 has zero Crafter-style status-block prompts).
+
+## BALROG 10-round campaign, round 3: BabaIsAI (2026-08-05)
+
+Round 3 (`heclgang/balrogr3babaisai`) applied both round-2 fixes
+preemptively from the start, generalized rather than Crafter-specific:
+
+- The `nle` stub (satisfying `nle.env.base.NLE.StepStatus.ABORTED`),
+  since direct source read of `balrog/environments/babaisai/base.py`
+  confirmed BabaIsAI also imports `GymV21CompatibilityV0` from the same
+  shared `balrog.environments.wrappers` package that hard-imports `nle`
+  -- this bug class is not Crafter-specific, it hits **every** BALROG env
+  wrapped in `GymV21CompatibilityV0`.
+- A generalized `sitecustomize.py` `.seed()`-shim covering both `baba`'s
+  and `crafter`'s `Env` classes (patches whichever is missing `.seed()`,
+  using the real default task id `env/goto_win` from BALROG's own
+  `config.yaml` `tasks.babaisai_tasks` to instantiate a real env for the
+  one-time class patch, not a guessed id).
+
+Both fixes held cleanly with **zero crashes** on the very first push (v1)
+-- no re-iteration needed this round, unlike round 2's two-crash cycle.
+Real result, direct from `babaisai_summary.json`: BabaIsAI's default task
+list is far larger than assumed (40 distinct tasks:
+`env/goto_win`, `env/make_win`, various `two_room-*`/`*-distr_*`/
+`*-irrelevant_rule` variants, etc, not just one), each run 8 episodes --
+**320 real episodes played total** (not the single-task 8 originally
+scripted), `input_tokens: 15,871,602`, `output_tokens: 506,172`, kernel
+runtime ~37 minutes (vs round 2's ~6 minutes, previously unexplained
+until this task-count discovery). `progression_percentage: 0.0` across
+literally every one of the 40 tasks, `standard_error: 0.0` -- a real,
+uniform floor, not noise. `eval.log` was empty on disk again (same
+logging-handler quirk observed in round 2 under BALROG's multiprocessing
+-- not investigated further since `summary.json`'s per-task breakdown
+already gives a complete real picture without it). BabaIsAI is a harder
+symbolic-rule-following task than Crafter/BabyAI (rules like "distr_rule"
+require inferring which game-state properties are relevant, a
+qualitatively different skill than either of the earlier two games' more
+direct/local action tasks) -- zero progression here is consistent with
+a 28.9M-param model with no BabaIsAI-shaped training data at all, same
+underlying cause named in round 2 (the model has never seen this game's
+prompt/action shape in its SFT mixture).
