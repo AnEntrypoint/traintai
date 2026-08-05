@@ -1,0 +1,22 @@
+[
+  "a wall 2 steps forward\na wall 1 step right",
+  "a wall 3 steps forward\na wall 3 steps left\na grey box 1 step left and 1 step forward",
+  "a wall 6 steps forward\na wall 3 steps right\na green key 2 steps left and 4 steps forward",
+  "a wall 2 steps forward\na wall 2 steps left",
+  "a wall 6 steps forward\na wall 3 steps left\na green key 1 step right and 1 step forward",
+  "a wall 1 step forward\na wall 2 steps left",
+  "a wall 1 step forward\na wall 1 step left",
+  "a wall 2 steps forward\na wall 3 steps right\na yellow key 3 steps left and 1 step forward",
+  "a wall 1 step forward\na wall 1 step right",
+  "a wall 1 step forward\na wall 1 step left",
+  "a wall 2 steps forward\na wall 1 step right\na grey key 3 steps left",
+  "a wall 4 steps forward\na wall 3 steps right",
+  "a wall 2 steps forward\na wall 1 step right",
+  "a wall 5 steps forward\na wall 2 steps left",
+  "a wall 4 steps forward\na wall 3 steps left",
+  "a wall 3 steps forward\na wall 2 steps left\na blue key 2 steps right and 2 steps forward",
+  "a wall 1 step forward\na wall 2 steps right",
+  "a wall 6 steps forward\na wall 2 steps right\na green box 1 step right and 3 steps forward",
+  "a wall 2 steps forward\na wall 3 steps right\na blue ball 2 steps left",
+  "a wall 2 steps forward\na wall 3 steps left\na grey box 1 step right and 1 step forward"
+]
