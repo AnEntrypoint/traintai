@@ -2,7 +2,13 @@
 
 Single-purpose SillyTavern NPC dialog model (28.9M params: 559K dense core +
 25.2M PLE table) with a Rust desktop runtime. Ship: `runs/ple-st-r16-grpo.pt`
-(honest forge pass 74%), exported to `firmware/model/model.bin`.
+(honest forge pass 74%), exported to `firmware/model/model.bin`. Best
+measured (not yet promoted to ship/export): `runs/ple-st-r23-grpo.pt`,
+forge pass 78%, sim_eval oracle match 39% (2026-08-04). `st-tourney-01`
+(2026-08-05, base=r23) is the first round to run the survival-sim
+tournament self-play loop live in `round.py`, autonomous multi-generation
+(`--branches 3 --generations 20 --hours 8`) on Kaggle T4 -- see the GPU
+hardware section below for why T4 (not T4x2/P100).
 
 ## Commands
 
@@ -388,3 +394,42 @@ two concurrent torch jobs crashing this machine twice). TPU v5e-8 is an
 8-chip pod but `device.py` only grabs one XLA device
 (`xm.xla_device()`) -- using the full pod needs real `torch_xla`
 SPMD/sharding work, scoped as a separate future item, not a config flag.
+
+## GPU hardware decision: T4 confirmed, T4x2/P100 both ruled out (2026-08-05)
+
+`device.py` gained real (still hardware-unverified) TPU v5e-8 SPMD support
+this session (`tpu_chip_count`/`setup_spmd_mesh`/`shard_batch`) but three
+real Kaggle TPU kernel pushes (`machine_shape` = `TpuV5e8`, `Tpu1VmV5e8`,
+and no `machine_shape` with `enable_tpu: true` alone) all ended ERROR or
+stuck QUEUED 20+ minutes, with no CLI mechanism to retrieve ERROR-status
+notebook logs. A later minimal probe kernel (no repo/deps, just
+`torch_xla.runtime.global_runtime_device_count()`) eventually completed
+after the session moved on and confirmed `device_type=TPU device_count=8`
+-- the pod itself is reachable, so the earlier ERROR pushes had some
+other, never-diagnosed cause. Per user direction this is parked, not
+pursued further this session.
+
+Direct probes on real Kaggle GPU kernels (fast queue, unlike TPU) instead
+answered the T4x2-vs-P100 question conclusively:
+- `machine_shape: "NvidiaTeslaT4x2"` silently provisions a single P100
+  (`torch.cuda.device_count() == 1`, `Tesla P100-PCIE-16GB`), not two T4s
+  -- the shape string does not do what its name implies on this account/
+  region.
+- `machine_shape: "NvidiaTeslaP100"` (explicit) confirmed the same P100,
+  and its log states directly: "Tesla P100-PCIE-16GB with CUDA capability
+  sm_60 is not compatible with the current PyTorch installation" (the
+  Kaggle image ships torch 2.10.0+cu128, which only supports sm_70-sm_120).
+  `torch.cuda.is_available()` still reports `True`, but any real kernel
+  launch would fail.
+- Single T4 (sm_75) is therefore the only viable, already-proven GPU shape
+  on this image -- unchanged from the existing recipe, now with the
+  T4x2/P100 alternatives ruled out by direct evidence rather than cited
+  benchmark alone.
+
+`train.py` now runs fp16 AMP (`torch.amp.autocast` + `GradScaler`) on CUDA
+to use T4's Tensor Cores (fp16, not bf16 -- T4 lacks fast bf16 Tensor Core
+throughput). Verified locally on real CUDA hardware with synthetic 5-step
+smoke runs, both `adamw` and `muon` optimizer paths, loss decreasing
+normally in both; not yet verified against the real data distribution or
+full round length -- watch the `st-tourney-01` log for GradScaler-related
+instability (skipped steps, inf/nan) before trusting it fully.
