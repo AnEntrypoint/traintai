@@ -801,3 +801,55 @@ Drive reliably), run `balrog_demo_convert.py` against it for real numbers
 `balrog_demos.jsonl` in the mixture, and re-measure `sim_eval.py` plus a
 fresh BALROG eval round per game to get a real before/after progression
 delta -- this is the next concrete step.
+
+## Real first attempt at the demo-data training run: negative result, real cause found (2026-08-05)
+
+Ran `heclgang/balrogdemotrain`: real `gdown` download of `records.zip`
+succeeded (313MB, confirmed via direct `unzip -l`: all 6 real games
+present at `records/<game>/<task>/*.npz`, 416 total files). Real SFT
+training completed (2000 steps from r23). Real BabyAI BALROG eval on the
+new checkpoint: **0.0% progression, worse than round 1's untrained
+12.50% baseline** -- a genuine negative result, recorded honestly rather
+than hidden.
+
+**Root cause, found by reading the real per-episode trajectory JSON**
+(`goto_run_00.json`, pulled directly from Kaggle output): every one of
+64 steps in the episode emitted `"go forward"` as the parsed action, but
+`failed_candidates` (BALROG's log of every RAW completion that didn't
+parse as a valid action before falling back) shows the model's real raw
+output was pure NPC-dialog-flavor prose -- "Latins Hatifats on the
+latest attack", "Mythology will be found\nPlayer:", "Ah friend Recrea is
+a bioterubnatur", etc -- with ZERO actual BabyAI action vocabulary
+anywhere. This confirms `data/npc/balrog_demos.jsonl` was **never
+actually present in the training mixture for this run**: the trained
+checkpoint behaves identically to a model that has never seen a single
+BALROG-shaped example, exactly the pre-existing failure mode this whole
+effort was meant to fix. Cross-checked: `kaggle kernels output` (both
+default and multiple targeted `--file-pattern` pulls for
+`balrog_demos`/`.ipynb`) never returned `balrog_demos.jsonl` anywhere in
+the kernel's committed output tree, nor the notebook's own executed
+`__notebook__.ipynb`/`__results__.html` -- this run's 313MB
+`records.zip` plus hundreds of extracted `.npz`/`.mp4` files is by far
+the largest output of any kernel this session, and appears to have
+silently exceeded some real Kaggle output-snapshot size/pagination limit
+that every prior (much smaller) round's output pull never hit. Without
+the executed notebook's own cell output, the EXACT failure point inside
+`balrog_demo_convert.py --records-dir ... --cap 20000` (wrong
+`RECORDS_ROOT` auto-detection picking a directory with zero real
+subfolders, a silent exception in the per-episode replay loop, or the
+file genuinely being written but then excluded from the output snapshot
+by the same size limit that ate the notebook itself) is not yet
+isolated -- this is the next real thing to fix, not a guess to paper
+over.
+
+**Not yet done, concrete next steps:** (1) re-run with the conversion
+step's own stdout captured to a small dedicated log file under
+`/kaggle/working` (same fix pattern already used for
+`balrog_nle_build.log` in round 5) so the real per-game
+episodes/kept/skipped counts survive even if the notebook's own output
+gets truncated; (2) once the real counts are visible, if `balrog_demos.jsonl`
+is confirmed empty/near-empty, root-cause whether it's the
+`RECORDS_ROOT` auto-detect glob or something else; (3) only then re-run
+the real before/after eval -- this round's 0% result is not yet a
+verdict on whether BALROG expert-demo SFT data helps, only a verdict
+that this run never actually tested it.
