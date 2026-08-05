@@ -10,7 +10,7 @@ response.choices[0].message.content / .finish_reason and
 response.usage.prompt_tokens / .completion_tokens back. This server
 implements exactly that request/response shape and nothing else.
 
-Reuses sim_tournament.py's real batched_generate() decode loop (measured
+Reuses batched_decode.py's real batched_generate() decode loop (measured
 2.86x speedup via left-padding + causal-padding masks this session)
 rather than a second generation implementation.
 """
@@ -23,9 +23,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import torch
 from tokenizers import Tokenizer
 
+from batched_decode import batched_generate
 from device import get_device
 from model import Config, TinyLM
-from sim_tournament import batched_generate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")

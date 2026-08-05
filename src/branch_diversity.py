@@ -2,9 +2,9 @@
 
 A real, checkable behavioral-distance metric between N branch
 checkpoints: run every checkpoint greedily (temperature effectively 0,
-deterministic) against the SAME fixed probe set of survival-sim turns,
-and measure the fraction of probes where any two checkpoints' first
-generated action-line (or dialog, if no action) differs. Mean pairwise
+deterministic) against the SAME fixed probe set of real BALROG game
+observations, and measure the fraction of probes where any two
+checkpoints' first generated completion differs. Mean pairwise
 divergence near 0 means the branches have collapsed to functionally
 identical policies despite distinct --seed values -- the exact failure
 mode round.py's per-branch --seed diversity source is meant to prevent,
@@ -12,42 +12,44 @@ now actually measured rather than assumed.
 
 Not a training or selection script -- read-only comparison, printed as a
 dashboard in the same style as npc_forge.py's flaw histogram.
+
+Probes come from probes.json, a real dump of BALROG environment
+observations (see balrog-smoke/dump_probes.py, which must be run inside
+a BALROG kernel/environment -- BALROG's own gym==0.23 pin conflicts with
+this repo's numpy>=2.5.1, so the two never share a Python environment,
+per this session's explicit architecture decision). No hardcoded/
+hand-authored probe text -- if probes.json is missing, this fails loudly
+rather than falling back to synthetic strings.
 """
 
 import argparse
+import json
 import os
-import random
 
 import torch
 from tokenizers import Tokenizer
 
 from model import Config, TinyLM
 from device import get_device
-from sim_world import SurvivalWorld
-from st_world import PLACES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
-
-N_PROBES = 20
-PROBE_SEED = 5  # fixed, disjoint from every round's own seeds, so every checkpoint sees the identical probe set
+PROBES_PATH = os.path.join(HERE, "..", "data", "balrog_probes.json")
 
 
 def build_probes():
-    """A fixed, reproducible set of N_PROBES rendered turns (same shape
-    sim_baseline.py uses), generated once with a seed no training/
-    tournament run ever uses, so every checkpoint compared is judged
-    against literally the same inputs."""
-    rng = random.Random(PROBE_SEED)
-    w = SurvivalWorld(rng)
-    places = [p[0] for p in PLACES]
-    agents = [w.spawn_agent(rng.choice(places)) for _ in range(6)]
-    probes = []
-    for _ in range(N_PROBES):
-        w.tick()
-        a = rng.choice([ag for ag in agents if ag.alive] or agents)
-        probes.append(w.render_turn(a))
-    return probes
+    """Loads the fixed real-BALROG-observation probe set dumped by
+    balrog-smoke/dump_probes.py. Every checkpoint compared is judged
+    against literally the same real game states -- raises if the dump
+    hasn't been generated yet, rather than silently falling back to
+    synthetic text."""
+    if not os.path.exists(PROBES_PATH):
+        raise FileNotFoundError(
+            f"{PROBES_PATH} not found -- run balrog-smoke/dump_probes.py inside a BALROG "
+            "environment first and copy its probes.json output here as data/balrog_probes.json."
+        )
+    with open(PROBES_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def greedy_complete(model, tok, prompt, tokens, device):
@@ -113,7 +115,7 @@ def main():
         raise SystemExit("need at least 2 checkpoints to measure diversity between")
 
     pair_divergence, mean_divergence = measure_diversity(args.ckpts, tokens=args.tokens)
-    print(f"=== branch diversity ({len(args.ckpts)} checkpoints, {N_PROBES} fixed probes, greedy decode) ===")
+    print(f"=== branch diversity ({len(args.ckpts)} checkpoints, {len(build_probes())} real BALROG probes, greedy decode) ===")
     for (a, b), d in sorted(pair_divergence.items(), key=lambda kv: kv[1]):
         print(f"  {a} vs {b}: {d:.0%} of probes diverge")
     print(f"mean pairwise divergence: {mean_divergence:.0%}")
