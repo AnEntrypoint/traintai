@@ -73,10 +73,20 @@ class Handler(BaseHTTPRequestHandler):
         ids = STATE["tok"].encode(prompt).ids
         # our model's real context window (model.py Config.seq_len) --
         # truncate from the left (keep the most recent context) rather
-        # than crash or silently wrap.
+        # than crash or silently wrap. BALROG callers can request
+        # max_tokens far larger than our seq_len (its config.yaml default
+        # is 8192); clamp the actual generation budget to what the
+        # context window can hold, and always reserve at least 1 prompt
+        # token -- an empty prompt crashes batched_generate's
+        # logits[:, -1, :] on a zero-length sequence dimension (a real
+        # bug hit on the first live BALROG episode, root-caused to
+        # max_tokens > seq_len making the truncation slice negative and
+        # emptying the prompt entirely).
         seq_len = STATE["cfg"].seq_len
-        if len(ids) > seq_len - max_tokens:
-            ids = ids[-(seq_len - max_tokens):]
+        max_tokens = min(max_tokens, seq_len - 1)
+        budget = max(seq_len - max_tokens, 1)
+        if len(ids) > budget:
+            ids = ids[-budget:]
 
         gen = batched_generate(
             STATE["model"], [ids], max_tokens, [temperature], top_k=40, device=STATE["device"]
