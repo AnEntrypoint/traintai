@@ -458,3 +458,44 @@ byte-identical to before). This is exactly the class of bug this
 project's data-mixture/checkpoint-naming discipline exists to catch:
 real execution surfaced it, not code review -- the multi-generation
 branching path was never actually run end-to-end on Kaggle before this.
+
+## st-tourney-01, corrected run: 3 real generations, new best g1-b2 78%->73% (2026-08-05)
+
+After the round.py fix (above), a fresh kernel run (v6) was manually
+stopped at ~2h (user's own call, to surface interim progress rather than
+wait the full 8-hour budget blind) after completing 3 real generations.
+Confirmed via direct log read (`kaggle kernels output --file-pattern`,
+not the notebook's own stdout, which was empty at cancel time):
+
+- **g0** (base r23, 78% forge): branches 65%/70%/70% forge pass -- an
+  expected dip from a fresh SFT/GRPO cycle on a mixture now including the
+  new tournament-generated data for the first time.
+- **g1** (promoted from g0): branches 66%/73%/72% -- real improvement
+  over g0, best branch (`g1-b2`) recovering most of the way back toward
+  r23's baseline.
+- **g2** (promoted from g1): branches 49%/52%/58% -- a real, sharp
+  regression, not noise (every branch dropped). Dominant flaw: `no_stop`
+  at 33% (`st-tourney-01-g2-b0-forge.log`), the same flaw *class*
+  root-caused for r24 above, but action-forge's own oracle-match rate
+  stayed flat 0% across g1/g2 identically, so this is a different cause,
+  not the same bug recurring -- not yet root-caused, tracked as an open
+  PRD row (`generation-2-forge-regression`).
+
+`g1-b2`'s checkpoint (`ple-st-tourney-01-g1-b2-grpo.pt`, 73% forge,
+recovered from the kernel before its container tore down) uploaded to
+the `heclgang/traintai-checkpoints` Kaggle dataset alongside r23, as a
+real base for the next corrected run.
+
+**Real, standing bug found in the same pass:** `sim_tournament.py`'s
+`fitness_of()` produced **zero spread** (`min 8 max 8 mean 8.0`) across
+every single one of the 3 generations checked -- `ticks_survived` is
+constant at the `horizon=8` default since nobody ever dies within 8
+ticks, and every other term (trades/combats/places_seen) is apparently
+also identical this early in training, so every one of the 32 branches
+per tournament run gets literally the same fitness score. The "survivors
+kept: 8/32" selection is therefore not selecting anything meaningful yet
+-- an arbitrary slice, not the intended top-fraction. Tracked as
+`tournament-fitness-zero-spread-bug`/`-root-cause`; leading fix direction
+is lengthening `horizon` (more ticks = more chance for real divergence)
+before touching the fitness formula itself, but this needs a real
+measured test, not a guess.
