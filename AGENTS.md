@@ -428,8 +428,33 @@ answered the T4x2-vs-P100 question conclusively:
 
 `train.py` now runs fp16 AMP (`torch.amp.autocast` + `GradScaler`) on CUDA
 to use T4's Tensor Cores (fp16, not bf16 -- T4 lacks fast bf16 Tensor Core
-throughput). Verified locally on real CUDA hardware with synthetic 5-step
-smoke runs, both `adamw` and `muon` optimizer paths, loss decreasing
-normally in both; not yet verified against the real data distribution or
-full round length -- watch the `st-tourney-01` log for GradScaler-related
-instability (skipped steps, inf/nan) before trusting it fully.
+throughput). Confirmed stable on the real `st-tourney-01` data/round length
+below: healthy loss curves, no inf/nan, ~65s/300 SFT steps.
+
+## st-tourney-01 generation 0: SFT-checkpoint-path regression, fixed (2026-08-05)
+
+First live run of the autonomous multi-generation tournament loop
+(`--branches 3 --generations 20 --hours 8`, base r23) on the real Kaggle T4
+kernel. All 3 branches of generation 0 completed SFT cleanly (val ppl
+~11.1, wall ~65s/300 steps -- the AMP change confirmed working on real
+data) but then crashed identically at the GRPO stage:
+`FileNotFoundError: .../ple-st-tourney-01-g0-bN-s0.pt`. Root cause, found
+by reading the real kernel logs directly (`kaggle kernels output
+--file-pattern`): `run_one_round()` built `sft_ckpt`/`best_ckpt` with a
+hardcoded `-s0` suffix, left over from before per-branch seeding existed.
+`run_generation()` actually passes a distinct non-zero `sft_seed` per
+branch (`1000 + gen_idx*100 + i`, for lineage diversity), and `train.py`'s
+real output filename embeds that seed (`ple-<tag>-s<seed>.pt`) -- so the
+hardcoded path never matched any file on disk, on any branch, ever. With
+all 3 branches returning `None`, `rank_branches()` got an empty list and
+the loop correctly halted after generation 0 (per its own
+"ALL BRANCHES FAILED ... the run must stop" logic) rather than promote
+nothing -- but this meant the entire 8-hour autonomous budget was wasted
+after only ~47 minutes of real GPU time. Fixed by deriving the seed
+suffix from the same `sft_seed` value already threaded through
+`run_one_round` (falls back to `0` when `sft_seed=None`, matching
+`train.py --seed`'s own default, so the un-branched single-round path is
+byte-identical to before). This is exactly the class of bug this
+project's data-mixture/checkpoint-naming discipline exists to catch:
+real execution surfaced it, not code review -- the multi-generation
+branching path was never actually run end-to-end on Kaggle before this.
