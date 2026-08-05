@@ -106,6 +106,12 @@ def main():
     device = get_device()
     os.makedirs(RUNS, exist_ok=True)
 
+    # AMP (fp16 autocast + GradScaler) only on CUDA. T4 is sm_75: fp16 Tensor
+    # Cores are fast, bf16 Tensor Core throughput is not, so fp16+scaler is
+    # the correct pairing here (not bf16, which needs sm_80+ to be worth it).
+    use_amp = str(device) == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
     # Real multi-chip TPU v5e-8 support: mesh is None on every non-TPU
     # device and on a single-chip TPU, so shard_batch() is a no-op
     # everywhere except a real multi-chip pod. UNVERIFIED on real
@@ -154,11 +160,18 @@ def main():
             g["lr"] = lr
         x, y = train_b()
         x, y = shard_batch(x, spmd_mesh), shard_batch(y, spmd_mesh)
-        _, loss = model(x, y)
+        with torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
+            _, loss = model(x, y)
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        scaler.scale(loss).backward()
+        if use_amp:
+            scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer_step(opt, device)
+        if use_amp:
+            scaler.step(opt)
+            scaler.update()
+        else:
+            optimizer_step(opt, device)
         if args.optimizer == "muon":
             muon_lr = lr_at(step, args.steps, args.muon_lr, args.warmup, args.stable_frac)
             with torch.no_grad():
