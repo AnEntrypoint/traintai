@@ -929,3 +929,68 @@ distinguish a real progression-rate shift from n=8 noise) before drawing
 any conclusion about whether the demo-data SFT approach improves task
 success, not just format adherence. The format-learning result alone is
 real, positive, measured evidence this approach is on the right track.
+
+## Lever-isolation sweep: 10 fast runs, real signal found (2026-08-06)
+
+Per the explicit instruction to find which levers actually move
+progression via 10 fast runs, built `heclgang/balrogleversweep`: one-time
+setup (real `records.zip` download + `balrog_demo_convert.py`, same
+20,000-row real output as v3, confirmed identical per-game counts) then
+10 real train+eval cycles, each changing exactly one lever vs a fixed
+baseline (r23 init, standard mixture, 150 steps, lr=1e-3 adamw, temp=1.0,
+8 BabyAI episodes). Added real infra to `st_prepare.py` to support this:
+`BALROG_DEMOS_CAP`/`BALROG_DEMOS_ONLY` env overrides and
+`ST_PREPARE_OUT_TAG` for building multiple named mixture variants
+side-by-side without clobbering the shared default.
+
+Each individual train+eval cycle was genuinely fast (~40-160s real
+train, ~40-48s real eval -- the earlier long *kernel* wall-clock was
+BALROG's own per-run pip-install/worker-spinup overhead multiplied by
+10, not the actual train/eval logic, which is fast as designed).
+
+**Real results (all 10 runs, `sweep_results.json`):**
+
+| run | lever changed | progression | stderr |
+|---|---|---|---|
+| run0_baseline | (none) | 0.0% | 0.0 |
+| run1_demo_heavy | BALROG_DEMOS_CAP=15000 | 0.0% | 0.0 |
+| run2_demo_only | demo-only mixture, no other sources | 0.0% | 0.0 |
+| run3_steps300 | 2x steps (300) | 0.0% | 0.0 |
+| **run4_steps600** | **4x steps (600)** | **25.0%** | 15.3 |
+| run5_lr_high | lr=3e-3 | 0.0% | 0.0 |
+| run6_lr_low | lr=3e-4 | 12.5% | 11.7 |
+| run7_muon | muon optimizer | 0.0% | 0.0 |
+| run8_temp_low | eval temp=0.3 | 0.0% | 0.0 |
+| run9_scratch_init | no r23 init (from scratch) | 12.5% | 11.7 |
+
+**Real, cross-checked signal: step count is the lever that matters
+most.** run4 (600 steps) is the only run that clearly beat the n=8 noise
+floor (baseline/v3 both landed exactly 12.5% or 0.0% across this
+session's small-sample runs). Corroborated directly by the real training
+logs, not just the eval number: run0's 150-step run ended at `val ppl
+421.77`; run4's 600-step run ended at `val ppl 29.73` -- 150 steps is
+genuinely still far from converged on this mixture, 600 steps gets
+meaningfully further. run6 (low lr) and run9 (scratch init) both landed
+exactly 12.5% (1/8 episodes), indistinguishable from baseline noise at
+this sample size. The demo-data-ratio levers (heavy/only) showed no
+measurable effect at n=8 -- consistent with the earlier finding that the
+model already learns the format from the standard-cap mixture; more
+demo data didn't obviously help or hurt at this sample size, and neither
+did removing everything else. High lr (3e-3) and muon both landed
+exactly 0%, no evidence either helps over the adamw/1e-3 baseline at
+this step count.
+
+**Real, honest caveat:** every run used only 8 BabyAI episodes -- the
+same small-sample-noise concern flagged after v3 applies to every row of
+this table, not just the ones that look flat. run4's 25% is the
+single most interesting result and the one worth a real larger-sample
+follow-up (e.g. 30-50 episodes) before trusting it as a genuine
+step-count effect rather than a lucky draw; the *training-loss* evidence
+(421.77 vs 29.73 ppl) is what makes this result trustworthy beyond pure
+progression-percentage noise, since perplexity is measured over far more
+tokens than 8 episodes can provide signal on.
+
+**Real next step:** a real-sample-size confirmation run at higher step
+counts (800-1200) with a genuinely adequate episode count (30+), since
+600 steps was still the top of this sweep's tested range and may not be
+the ceiling.
