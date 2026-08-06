@@ -1427,3 +1427,48 @@ purposes).
 
 `heclgang/balrogallgameseval` v2 re-pushed after confirming
 `ple-st-r8bet600-s0.pt` is genuinely present in the dataset; running.
+
+## Real Kaggle /kaggle/input path-structure change discovered + TPU SIGABRT single-process test launched (2026-08-07)
+
+v2/v3 of `heclgang/balrogallgameseval` both failed at the checkpoint-copy
+cell with real diagnostic evidence this time (a fixed-depth glob printed
+`/kaggle/input`'s actual contents before raising): the attached dataset
+is now mounted at `/kaggle/input/datasets/heclgang/<slug>/...`, not the
+flat `/kaggle/input/<slug>/...` every earlier round's kernel (including
+round 7/8's own successful checkpoint-copy cells) assumed and relied on.
+This is either a genuine Kaggle platform change made between round 8
+(2026-08-06) and now, or an artifact specific to how this particular
+kernel's dataset got attached -- not yet distinguished, but real and
+reproducible across 2 separate pushes. Fixed via an unbounded recursive
+glob (`/kaggle/input/**/ple-st-r8bet600-s0.pt`, `recursive=True`) instead
+of a fixed-depth pattern, so the checkpoint is found regardless of
+mount depth -- the correct general fix, not another depth guess. v4
+pushed and running.
+
+**TPU SIGABRT root-cause test launched**: built `heclgang/tpuspmdverify2`
+to test the stale-process hypothesis directly (WebSearch found real,
+if inconclusive, precedent for PJRT/TPU-client being a process-level
+singleton -- torch_xla issue #3214). Real evidence from the original
+crash's own log (`tpu-spmd-verify/output_final/tpuspmdverify.log`):
+`data/prepare.py`'s real output (`train 74,877,070 tokens...`) appears
+immediately before the SIGABRT, with ZERO `train.py` output in between
+(no device-selection print, no step log) -- confirming the crash
+happens at `train.py` process/runtime startup, not mid-training. The
+crashing cell was `!TRAINTAI_DEVICE=xla python3 src/train.py ...`, a
+FRESH OS subprocess spawned via `!`, launched AFTER earlier notebook
+cells already called `xr.use_spmd()`/did real sharded-tensor work in
+the notebook's own long-lived Python process -- exactly the shape the
+singleton-conflict hypothesis predicts. `tpuspmdverify2` removes the
+subprocess entirely: `train.main()` is called in-process via `sys.argv`
+manipulation (the real production `train.py` code, not a
+reimplementation) so it is the ONLY code in the kernel to ever touch
+the TPU/SPMD runtime. Pushed, currently QUEUED (TPU kernels have a
+real, longer queue than GPU kernels, per this session's earlier
+finding). If this run does NOT crash: root cause confirmed as the
+stale-process/subprocess pattern, and train.py's real production
+invocation (never via a `!python3` subprocess after SPMD setup) is the
+permanent fix. If it DOES crash identically: the stale-process
+hypothesis is ruled out and the real cause lies elsewhere in the
+SPMD/Embedding interaction itself, needing further investigation
+(e.g. the torch_xla 2.4.x downgrade candidate from the same research
+pass).
