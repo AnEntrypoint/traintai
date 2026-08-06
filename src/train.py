@@ -118,7 +118,7 @@ def main():
     # hardware as of this commit -- see device.py's module docstring.
     spmd_mesh = setup_spmd_mesh()
     if spmd_mesh is not None:
-        print(f"SPMD mesh active: sharding batches across {spmd_mesh.shape()[0]} XLA chips", flush=True)
+        print(f"SPMD mesh active: sharding batches across {spmd_mesh.shape()['batch']} XLA chips", flush=True)
 
     # vocab 4096 uses the original train.bin/val.bin; other vocabs use suffixed bins.
     suffix = args.data_suffix if args.data_suffix is not None else (
