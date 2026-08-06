@@ -1030,3 +1030,33 @@ Kernel pushed and running. Real result not yet known -- this section
 will be updated with the actual eval numbers once the kernel completes,
 per this project's real-evidence-only discipline (a number never lands
 without a real measurement behind it).
+
+## Round 7 v1 real result: honest 3.33%, Crafter bug found and fixed (2026-08-06)
+
+Real result on the trained checkpoint (1500 steps): **BabyAI
+progression 3.3333% (1/30 episodes succeeded), standard_error 3.28**.
+Confirmed via direct per-episode inspection: exactly 1 of 30 episodes
+returned a real reward (`0.9859375`), the rest all `0.0` -- the same
+"one lucky episode dominates" pattern every prior n=8 round showed, just
+diluted across a larger, more honest denominator this time. This is
+LOWER than round 1's original n=8 baseline (12.5%) and the lever-sweep's
+n=8 600-step result (25.0%) -- real evidence that both of those earlier
+numbers were very likely noise from an inadequate sample size, not
+genuine effects, exactly the concern flagged after each of them. At
+n=30, the real underlying success rate for this checkpoint on BabyAI
+looks close to 1-in-20-to-30, not 1-in-8-to-4. This is a materially
+different, more trustworthy picture than every earlier small-sample
+result in this session, and needs to inform how future eval batches are
+sized (n=8 is not adequate for this project's real success rates).
+
+**Crafter never actually ran in v1**: all 15 Crafter episodes crashed
+identically with `ModuleNotFoundError: No module named 'nle'` --
+confirmed via direct `eval.log` read (`crafter_env.py` -> BALROG's
+shared `GymV21CompatibilityV0` wrapper -> `nle` import chain, the EXACT
+bug round 2 root-caused and fixed with a minimal `nle` stub). This
+notebook was built from scratch rather than derived from round 2's
+kernel and simply forgot to carry the fix over -- a real process gap
+(later fixes in this campaign are not automatically inherited by new
+kernels unless explicitly re-applied), not a new bug. Fixed in v2 by
+re-applying round 2's exact `nle`-stub fix; re-running now for a real
+Crafter number, which v1 never produced.
