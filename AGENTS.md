@@ -1388,3 +1388,42 @@ games from the SAME checkpoint for the first time), and if
 `balrog_selfplay.jsonl` has real rows, wire it into a follow-up training
 round to measure whether self-play data moves progression further than
 expert-demo data alone did.
+
+## Real bug found: kaggle datasets version -r zip silently replaces ALL prior files (2026-08-07)
+
+`heclgang/balrogallgameseval` v1 crashed at cell `In [3]` (the checkpoint-
+copy-from-attached-dataset cell) with the explicit `raise SystemExit`
+guard firing: `ple-st-r8bet600-s0.pt` not found in the attached dataset.
+Real root cause, confirmed via `kaggle datasets files
+heclgang/traintai-checkpoints`: the dataset now contains ONLY
+`ple-st-r8bet600-s0.pt` -- both round 7's `ple-st-r7bestbet-s0.pt`
+(published just hours earlier this session) and the pre-session
+checkpoints (`ple-st-r23-grpo.pt`, `ple-st-tourney-01-g1-b2-grpo.pt`)
+are GONE. `kaggle datasets version -p . -m "..." -r zip` was run with
+only the single new checkpoint in the upload directory each time
+(round 7's and round 8's publish steps both did this) -- this command
+does NOT append/merge with the dataset's existing files, it REPLACES
+the entire dataset content with whatever's in the upload directory.
+This was never surfaced as an error by the CLI (`Upload successful`,
+`Dataset version is being created` -- no warning about removed files)
+and was only discovered now because round 8's checkpoint being the
+ONLY survivor happened to still satisfy this particular kernel's
+specific filename check.
+
+**Standing discipline going forward**: any future `kaggle datasets
+version` publish to `heclgang/traintai-checkpoints` MUST first download
+the dataset's current file list (`kaggle datasets files`) and current
+files (`kaggle datasets download`) into the same local upload directory
+as the new file being added, so the upload directory always contains
+the FULL desired set of files, never just the newest one -- this is
+the correct real fix for future publishes, not yet applied
+retroactively (the round 7/23/tourney checkpoints are genuinely lost
+from this dataset unless they still exist in an older dataset version,
+which Kaggle datasets do keep -- `kaggle datasets download -v <N>`
+against an earlier version number could potentially recover them if
+needed later; not attempted this pass since round 8's checkpoint is
+the current best-evidence one and is what matters for immediate
+purposes).
+
+`heclgang/balrogallgameseval` v2 re-pushed after confirming
+`ple-st-r8bet600-s0.pt` is genuinely present in the dataset; running.
