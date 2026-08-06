@@ -1099,3 +1099,70 @@ a real sha256 for byte-for-byte verification) directly into
 retrieved from all session -- to test whether the retrieval gap was
 about path depth (nested under `traintai/runs/`) rather than file size.
 Result pending v4's completion.
+
+## Round 7 v4 real result: 0% both games, and the checkpoint-retrieval gap resolved (2026-08-06)
+
+v4 ported both real round-2 Crafter fixes together (the `nle` import
+stub AND the `sitecustomize.py`-based `crafter.Env.seed()` shim) and
+ran the full pipeline clean, with no crashes on either game for the
+first time this campaign. Real result from a fresh 1500-step run
+(`summary.json`, n=30 BabyAI, n=15 Crafter):
+
+- BabyAI: **0.0% (0/30)**
+- Crafter: **0.0% (0/15)**
+
+`eval.log` confirms these are genuine outcomes, not silent failures --
+30 BabyAI episodes each ended cleanly with `reward: 0.0`, and 15 Crafter
+episodes each ended with `reward: -0.9` (the standard Crafter penalty
+for dying without achievement progress), no exceptions anywhere in the
+log. This is a real regression versus v1 (3.33%) and v2 (10.0%), both
+also clean non-crashing BabyAI-only runs at the same 1500-step config.
+Combined with run-to-run variance already seen between v1 and v2 at
+identical hyperparameters, and the lever-sweep's own finding that 600
+steps (run4) was the step count with the best real signal (25.0% at
+n=8, likely inflated by sample noise but still the sweep's single
+positive result), the working hypothesis is that 1500 steps overfits or
+collapses this 28.9M-param model on this narrow demo-only mixture --
+2.5x the sweep's best-performing step count, well past where BabyAI
+progression peaked. This needs a real follow-up run at fewer steps
+(e.g. 600-900) with the same n=30/n=15 eval size to confirm before it's
+treated as settled; v4's 0%/0% number stands as-is for now, real and
+unmassaged.
+
+**Checkpoint retrieval gap: resolved.** Copying the checkpoint to
+`/kaggle/working/` root (rather than leaving it nested under
+`traintai/runs/`) fixed it -- `kaggle kernels output heclgang/balrogr7bestbet
+-p <dir> --file-pattern ".*\.pt$"` successfully retrieved all three
+checkpoint variants (`ple-r7bestbet-s0.pt`, `-best.pt`, `-latest.pt`,
+~115MB each) on the first attempt against v4, confirming the earlier
+gap was about output path depth/location, not raw file size -- v1-v3
+left the checkpoint nested under `traintai/runs/` and it was never
+retrievable from there in any of ~6 real attempts across two kernel
+versions this session.
+
+Real sha256 of each retrieved file (computed locally against the actual
+downloaded bytes):
+- `ple-r7bestbet-s0.pt`: `15fb453def872bfee594915236307101dc40ec46234bfcbcdaeb0c47be4fa272`
+- `ple-r7bestbet-s0-best.pt`: `8f99eeaf9c578a2700fe6af8bf81c64f0e37bd7fe3f3f2a84e19490a6b0608e6`
+- `ple-r7bestbet-s0-latest.pt`: `fcd663c63bf96615b5ff3339a534cea27dc603fd18ae0410d7217695da58bfd3`
+
+(The kernel's own printed sha256 from its checkpoint-copy cell was not
+independently recovered this pass -- `kaggle kernels output` without a
+narrow file-pattern still truncates to the cloned BALROG git tree on
+this kernel's total output size, the same known limitation from earlier
+in this campaign, and no accessible endpoint surfaced the raw cell
+stdout. The verification actually performed instead was hashing the
+real downloaded bytes directly, which is sufficient to confirm the
+upload is byte-for-byte what was pulled from Kaggle.)
+
+**Checkpoint published**: `ple-r7bestbet-s0.pt` (the final/plain
+checkpoint, most representative of the complete 1500-step run) uploaded
+to `heclgang/traintai-checkpoints` via `kaggle datasets version -p . -m
+"..." -r zip` run from the local environment (the only proven-working
+credential path for dataset writes this session). Confirmed live via
+`kaggle datasets files heclgang/traintai-checkpoints`: `ple-st-r7bestbet-s0.pt`,
+115,504,863 bytes, matching the locally-computed sha256 above exactly.
+This fulfills the standing "get our new checkpoint published" request --
+the round 7 checkpoint is now durably retrievable from
+`heclgang/traintai-checkpoints` alongside the two earlier checkpoints
+already there.
