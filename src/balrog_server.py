@@ -65,6 +65,35 @@ def build_prompt(messages):
     return "\n".join(lines)
 
 
+def truncate_prompt_ids(tok, messages, budget):
+    """Left-truncates history/observation tokens while always keeping the
+    first message (instruction_prompt_for()'s action list + goal text)
+    intact. A blind left-truncation of the full flattened prompt can, on
+    games with long instructions (Crafter/MiniHack/NLE all measured over
+    seq_len in balrog_context_probe.py), cut the instruction's own action
+    vocabulary before the model ever sees the current observation --
+    verified directly: NLE's real instruction+one-turn prompt is 1475
+    tokens against a 496-token budget, and the surviving 496 tokens were
+    entirely the instruction's own tail (tips text), never the action
+    list or the observation. Truncating history/observation instead keeps
+    the model's only source of valid-action vocabulary intact at the cost
+    of older turns, the same tradeoff build_row() already makes in
+    balrog_demo_convert.py for training data."""
+    if not messages:
+        return tok.encode("assistant:").ids[-budget:]
+
+    instruction_ids = tok.encode(f"{messages[0].get('role', 'user')}: {messages[0].get('content', '')}").ids
+    tail_ids = tok.encode(build_prompt(messages[1:])).ids if len(messages) > 1 else tok.encode("assistant:").ids
+
+    if len(instruction_ids) >= budget:
+        return instruction_ids[-budget:]
+
+    tail_budget = budget - len(instruction_ids)
+    if len(tail_ids) > tail_budget:
+        tail_ids = tail_ids[-tail_budget:]
+    return instruction_ids + tail_ids
+
+
 class InferenceWorker(threading.Thread):
     """One worker per GPU. Pulls queued requests, forms a micro-batch
     (up to max_batch items, or whatever has arrived within
@@ -132,13 +161,10 @@ class Handler(BaseHTTPRequestHandler):
         temperature = body.get("temperature")
         temperature = 0.7 if temperature is None else float(temperature)
 
-        prompt = build_prompt(messages)
-        ids = STATE["tok"].encode(prompt).ids
-        # our model's real context window (model.py Config.seq_len) --
-        # truncate from the left (keep the most recent context) rather
-        # than crash or silently wrap. BALROG callers can request
-        # max_tokens far larger than our seq_len (its config.yaml default
-        # is 8192); clamp to that AND to a real action-length budget.
+        # our model's real context window (model.py Config.seq_len).
+        # BALROG callers can request max_tokens far larger than our
+        # seq_len (its config.yaml default is 8192); clamp to that AND to
+        # a real action-length budget.
         #
         # A real measured throughput problem this session: BALROG's
         # naive.py/env_wrapper.py only ever need a few words (one action
@@ -153,8 +179,7 @@ class Handler(BaseHTTPRequestHandler):
         seq_len = STATE["cfg"].seq_len
         max_tokens = min(max_tokens, seq_len - 1, ACTION_RESPONSE_MAX_TOKENS)
         budget = max(seq_len - max_tokens, 1)
-        if len(ids) > budget:
-            ids = ids[-budget:]
+        ids = truncate_prompt_ids(STATE["tok"], messages, budget)
 
         # Round-robin this request onto one of the per-GPU queues -- each
         # queue's worker thread batches whatever concurrent requests land

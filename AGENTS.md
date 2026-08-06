@@ -1235,3 +1235,75 @@ task success diverged. Crafter's flat 0% across every step count
 tried strengthens the case that Crafter's near-zero progression is a
 separate, unresolved issue (see the empty-completion-response pattern
 recorded across rounds 2-6), not something step-count tuning will fix.
+
+## Real context-window fit measurement across all 6 BALROG games + a genuine truncation bug fixed (2026-08-06)
+
+Built `src/balrog_context_probe.py`, using the exact same
+`instruction_prompt_for()`/`build_prompt()` functions
+`balrog_demo_convert.py` and `balrog_server.py` already use at both
+training-data-build and serving time (no reimplementation), to measure
+real per-game instruction+observation token counts against `Config.
+seq_len=512` and our actual tokenizer. Real result:
+
+| game | instruction-only tokens | fits seq_len=512? |
+|---|---|---|
+| babyai | 193 | yes, comfortably |
+| textworld | 173 | yes, comfortably |
+| babaisai | 298 | yes |
+| minihack | 427 | yes, but only ~85 tokens left for observation+response |
+| crafter | 530 | **no -- exceeds seq_len on instruction alone** |
+| nle | 1250 | **no -- 2.44x seq_len on instruction alone** |
+
+Crafter and NLE's instructions alone (before any observation or
+response budget) exceed `seq_len=512` -- not a truncation-policy
+question, a hard architectural ceiling. These instruction texts are
+reproduced verbatim from BALROG's own source specifically to guarantee
+training/serving prompt parity with BALROG's real evaluation (Crafter's
+full 21-action list + 22 achievements; NLE's ~70-action NetHack command
+set + usage tips) -- shortening them would break that parity and risk
+the model learning a fictional action vocabulary that doesn't match
+what BALROG's environments actually expect. The real fix is raising
+`seq_len`, which requires retraining (an existing checkpoint's position
+embeddings/attention are shaped for 512 and can't be resized without
+retraining from scratch or a real architecture-surgery approach,
+neither attempted this session) -- not something to route around at
+the serving layer.
+
+**Real, separate bug found and fixed in the same pass**: even for games
+whose instruction DOES fit (MiniHack at 427, and any game once observation
++history push the total over budget), `balrog_server.py`'s old
+truncation (`ids = ids[-budget:]`, blind left-truncation of the full
+flattened prompt) truncates from the START of the token sequence --
+which is the START of the instruction, i.e. the action-name-to-verb
+mapping the model needs to act at all. Verified directly: NLE's real
+instruction+one-turn prompt is 1475 tokens against a 496-token budget
+(max_tokens=16), and the 496 tokens that survived blind left-truncation
+were entirely the instruction's own TAIL (trailing tips text) -- the
+action list and the actual game observation were both silently
+discarded, meaning the model was being served prompts with zero
+information about either valid actions OR current game state, on every
+single request for a game whose instruction exceeds budget. This
+explains at least part of the uniform 0% progression measured across
+every earlier round for the longer-instruction games (Crafter, MiniHack,
+NLE) -- the served prompt was strictly less informative than a truncation-
+aware implementation would have produced.
+
+Fixed via a new `truncate_prompt_ids()` in `balrog_server.py`: always
+keeps the instruction (first message) intact up to its own token count,
+and truncates ONLY the history/observation tail to fit the remaining
+budget -- the same tradeoff `balrog_demo_convert.py`'s `build_row()`
+already makes for training data, now applied consistently at serving
+time too. Verified directly: MiniHack (427-token instruction, previously
+sometimes truncated mid-action-list depending on history length) now
+always keeps its full action list; games whose instruction alone exceeds
+budget (Crafter, NLE) now correctly degrade to instruction-only (still
+missing the observation, per the architectural ceiling above, but no
+longer ALSO missing the action list).
+
+**Not yet done**: a real re-run of every affected game's BALROG round
+with the fixed server to measure whether this changes anything for
+MiniHack specifically (the one game close enough to seq_len that the
+fix could plausibly matter -- Crafter/NLE's ceiling is architectural and
+this fix cannot help them). Also not yet done: any concrete plan to
+raise `seq_len` past 512 for a future checkpoint generation, which is
+the only real fix for Crafter/NLE ever seeing their own observations.
