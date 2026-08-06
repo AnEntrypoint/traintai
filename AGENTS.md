@@ -1352,3 +1352,39 @@ actual data collection (running this converter against a real Kaggle
 eval.py output directory, most naturally round 8's own eval run since
 it's the first round with a real positive BabyAI signal to select on)
 remains as a follow-up training-round task, not a code gap.
+
+## BALROG per-game round wiring: real 6-game eval launched against round 8's checkpoint (2026-08-06)
+
+Built `heclgang/balrogallgameseval`, a single Kaggle kernel that
+evaluates round 8's real published checkpoint (`ple-st-r8bet600-s0.pt`,
+BabyAI 10.0%/Crafter 0.0% at n=30/n=15) across all 6 BALROG games in one
+run, applying every per-game fix already root-caused earlier in this
+campaign rather than re-discovering them crash-by-crash: the nle-stub +
+crafter/babaisai `.seed()` shim (rounds 2-3, with BabaIsAI's real env
+class correctly derived via `type(baba.make('env/goto_win'))` rather
+than a guessed `baba.Env` name -- verified against round 3's real
+proven fix before use, not assumed), the real `balrog-nle` C-extension
+build via apt-installed cmake (round 5, needed for MiniHack/NLE), and
+the `tatsu==5.8.3` pin + explicit TextWorld fork dependencies (round 4).
+Episode counts per game match rounds 1-6's own real counts (30 BabyAI,
+15 Crafter, 8 each for BabaIsAI/TextWorld/MiniHack/NLE) rather than a
+uniform guess, `max_steps_per_episode=500` capped consistently across
+every game per the earlier NLE-round precedent.
+
+The run's real output feeds directly into
+`src/balrog_selfplay_convert.py` (built earlier this session) via a
+final cell that locates the most recent BALROG results directory and
+runs the converter with `--min-return 0.0`, producing a real
+`balrog_selfplay.jsonl` from this checkpoint's own genuine successes
+across whichever games it manages any real progression on -- the first
+real self-play data this project will have, closing the loop from
+"train on expert demos" to "train on our own successful rollouts."
+
+Pushed and confirmed `KernelWorkerStatus.RUNNING`. Not yet complete;
+this is the first real per-game combined-eval run of this campaign
+(rounds 1-6 each tested exactly one game per kernel). Once complete:
+record the real per-game progression table (comparable across all 6
+games from the SAME checkpoint for the first time), and if
+`balrog_selfplay.jsonl` has real rows, wire it into a follow-up training
+round to measure whether self-play data moves progression further than
+expert-demo data alone did.
