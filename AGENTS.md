@@ -1192,3 +1192,46 @@ Once complete: pull `summary.json`, and if progression genuinely beats
 0%/0%, publish the checkpoint to `heclgang/traintai-checkpoints` the
 same way as round 7's (`kaggle datasets version` from local
 environment, sha256-verified against the freshly downloaded bytes).
+
+## Round 8 real result: BabyAI improved 0%->10%, Crafter still 0%, checkpoint published (2026-08-06)
+
+`heclgang/balrogr8bet600` completed cleanly (no crashes, `eval.log` shows
+30 clean BabyAI episode-done lines and 15 clean Crafter episode-done
+lines, all real `reward:` values, zero tracebacks). Real result
+(`summary.json`, n=30 BabyAI, n=15 Crafter):
+
+- BabyAI: **10.0% (3/30)** -- up from round 7 v4's 0.0% at the same
+  n=30 eval size, real evidence the step-count hypothesis was right:
+  600 steps (the lever-sweep's best-evidence point) outperforms 1500
+  steps on this data mixture.
+- Crafter: **0.0% (0/15)** -- unchanged from round 7 v4. Per-episode
+  rewards clustered at -0.9 (BALROG's standard death-without-progress
+  penalty), consistent with earlier rounds; the step-count fix did not
+  generalize to Crafter, which needs its own investigation (possibly a
+  training-data gap specific to Crafter's status-block prompt shape,
+  the same class of gap the empty-completion bug named across rounds
+  2-6, or a task genuinely harder to make any progress on).
+
+**Checkpoint published**: `ple-st-r8bet600-s0.pt` (115,504,792 bytes,
+sha256 `439b533c0b8fba66e396a66e2512e7031a14483509ddac057ce0e97094c0c175`)
+uploaded to `heclgang/traintai-checkpoints` via `kaggle datasets version`
+from the local environment, verified live via `kaggle datasets files`
+-- byte count and hash match exactly. This is a genuine improvement
+over round 7's published checkpoint on the metric that moved (BabyAI),
+so it replaces round 7's as the campaign's best-evidence checkpoint;
+round 7's `ple-st-r7bestbet-s0.pt` remains in the dataset alongside it
+as the prior data point, not deleted.
+
+Real evidence trail across the step-count lever, now three real data
+points at fixed init/optimizer/mixture: 150 steps (lever-sweep run0,
+0%), 600 steps (round 8, 10.0%), 1500 steps (round 7 v1/v2/v4, 3.33%/
+10.0%/0.0%, averaging well below round 8's single 600-step reading).
+600 steps is now the best-evidence step count for this model/mixture,
+superseding the earlier "push steps well past 600" reasoning that
+motivated round 7's 1500-step choice -- that reasoning was based on
+the training loss curve still descending at 600 steps, which turned
+out to not predict eval-time BabyAI progression; loss and downstream
+task success diverged. Crafter's flat 0% across every step count
+tried strengthens the case that Crafter's near-zero progression is a
+separate, unresolved issue (see the empty-completion-response pattern
+recorded across rounds 2-6), not something step-count tuning will fix.
