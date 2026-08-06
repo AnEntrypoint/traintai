@@ -1166,3 +1166,29 @@ This fulfills the standing "get our new checkpoint published" request --
 the round 7 checkpoint is now durably retrievable from
 `heclgang/traintai-checkpoints` alongside the two earlier checkpoints
 already there.
+
+## Round 8: fixing round 7's step-count regression, launched (2026-08-06)
+
+Round 7 v4's real 0%/0% result (both games, n=30/n=15, no crashes) is a
+genuine regression against v1 (3.33%) and v2 (10.0%), all three at 1500
+steps -- consistent run-to-run at that step count, not noise. The
+lever-sweep's own real loss curve showed 600 steps was still descending
+(val ppl 421.77 at 150 steps -> 29.73 at 600 steps) and was the ONE
+config in the entire 10-run sweep with a positive signal (25.0% at
+n=8, run4) -- 1500 steps is 2.5x past that point with no evidence it
+still helps, and round 7's three real runs at 1500 are now evidence it
+actively hurts.
+
+Round 8 (`heclgang/balrogr8bet600`, `balrog-round8-600steps/`) reverts
+to 600 steps, keeping every other real-evidence lever unchanged from
+round 7 (standard mixture, r23 init, adamw lr=1e-3, both real Crafter
+fixes -- nle stub + `crafter.Env.seed()` shim -- and the checkpoint-
+copy-to-`/kaggle/working/`-root fix that resolved the retrieval gap),
+retagged `r8bet600` so its checkpoint files don't collide with round
+7's on the shared `traintai-checkpoints` dataset. Same large n=30
+BabyAI / n=15 Crafter eval that proved round 7's regression was real,
+not sample noise. Pushed and confirmed `KernelWorkerStatus.RUNNING`.
+Once complete: pull `summary.json`, and if progression genuinely beats
+0%/0%, publish the checkpoint to `heclgang/traintai-checkpoints` the
+same way as round 7's (`kaggle datasets version` from local
+environment, sha256-verified against the freshly downloaded bytes).
