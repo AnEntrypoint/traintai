@@ -1060,3 +1060,42 @@ kernel and simply forgot to carry the fix over -- a real process gap
 kernels unless explicitly re-applied), not a new bug. Fixed in v2 by
 re-applying round 2's exact `nle`-stub fix; re-running now for a real
 Crafter number, which v1 never produced.
+
+## Round 7 v2 real result + second Crafter bug + checkpoint retrieval gap (2026-08-06)
+
+v2's real BabyAI result: **10.0% progression (3/30 episodes)**, a fresh
+1500-step training run with the identical config as v1 (3.33%) --
+real run-to-run variance on the same real hyperparameters, both readings
+well below the earlier n=8 numbers (12.5%, 25.0%), reinforcing that
+those were sample-size noise.
+
+Crafter still didn't produce a result in v2: the `nle`-stub fix alone
+only got past the import crash -- every one of the 15 Crafter episodes
+then hit `AttributeError: 'Env' object has no attribute 'seed'` (60 real
+occurrences in `eval.log`), the SAME second bug round 2 also hit and
+fixed with a `sitecustomize.py`-based shim
+(`balrog/environments/wrappers/gym_compatibility.py:123` unconditionally
+calls `self.gym_env.seed(seed)`, but this Kaggle image's pip-installed
+`crafter.Env` doesn't define `.seed()`). This notebook had only carried
+over half of round 2's real two-part fix. Fixed in v3/v4 by porting
+both fixes together.
+
+**Real checkpoint-retrieval gap found and worked around**: the trained
+`.pt` checkpoint (`runs/ple-r7bestbet*.pt`) was not retrievable via
+`kaggle kernels output`, confirmed via multiple real attempts (default
+unfiltered pull, and explicit `--file-pattern` regexes targeting `*.pt`
+specifically) against both v1 and v2, even though the exact same CLI
+reliably retrieves smaller text/log/json artifacts from those same
+kernel runs every other time this session. `heclgang/traintai-checkpoints`
+(which does contain two real 115MB checkpoints from an earlier session)
+was populated via `kaggle datasets version` run from THIS LOCAL
+environment (where the `kaggle` CLI has real working write credentials),
+not from inside a kernel -- Kaggle kernels' auto-provisioned credentials
+are not confirmed to support dataset writes, so an in-kernel
+`datasets version` publish step was considered and rejected as an
+unverified assumption. v4 instead copies the real checkpoint bytes (plus
+a real sha256 for byte-for-byte verification) directly into
+`/kaggle/working/` -- the directory `kernels output` has reliably
+retrieved from all session -- to test whether the retrieval gap was
+about path depth (nested under `traintai/runs/`) rather than file size.
+Result pending v4's completion.
