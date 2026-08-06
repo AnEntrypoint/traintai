@@ -994,3 +994,39 @@ tokens than 8 episodes can provide signal on.
 counts (800-1200) with a genuinely adequate episode count (30+), since
 600 steps was still the top of this sweep's tested range and may not be
 the ceiling.
+
+## Round 7: best-evidence training run, launched (2026-08-06)
+
+Per the standing instruction to apply everything learned and launch the
+best real training round possible, pushed `heclgang/balrogr7bestbet`
+combining every lever the sweep found neutral-or-positive plus pushing
+the one lever with a real, loss-corroborated effect (step count) well
+past the sweep's tested range:
+
+- Real BALROG expert-demo SFT data (`balrog_demo_convert.py`, proven to
+  teach the real action/prompt format -- v3's qualitative result).
+- Standard mixture ratio (`BALROG_DEMOS_CAP=3000` default) rather than
+  demo-heavy/demo-only -- the sweep found no measurable gain from either
+  variant at n=8, so there's no evidence-based reason to drop the rest
+  of the project's real-data mixture for an unproven change.
+- r23 checkpoint init -- scratch-init showed no advantage in the sweep
+  (12.5%, noise-level, same as low-lr).
+- adamw optimizer, lr=1e-3 -- the sweep's only neutral-to-positive
+  optimizer/lr setting; high lr (3e-3) and muon both landed exactly 0%,
+  no evidence either helps.
+- **1500 steps** (2.5x the sweep's top-tested 600) -- steps is the one
+  lever with real, loss-corroborated evidence of a genuine effect (val
+  ppl 421.77 at 150 steps -> 29.73 at 600 steps, still descending, not
+  yet plateaued), so this is the primary bet this round is built around.
+- **Real fix to the n=8 noise problem**: this round evals 30 BabyAI
+  episodes (not 8) plus 15 Crafter episodes, both large enough that a
+  single lucky/unlucky episode can no longer swing the aggregate result
+  by 12.5 percentage points the way every n=8 run this session could --
+  and Crafter is included specifically to check whether any real gain
+  generalizes beyond the one game (BabyAI) the entire sweep ever
+  measured.
+
+Kernel pushed and running. Real result not yet known -- this section
+will be updated with the actual eval numbers once the kernel completes,
+per this project's real-evidence-only discipline (a number never lands
+without a real measurement behind it).
