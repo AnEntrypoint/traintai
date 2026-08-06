@@ -82,6 +82,7 @@ KAGGLE_GAMEARENA_CAP = 900  # same sparse ~5% role, combined across all 13 Kaggl
 KAGGLE_WEREWOLF_CAP = 2000  # Werewolf's own larger, separately-capped allocation, IN ADDITION TO its share of kaggle_gamearena.jsonl's combined pool
 BALROG_DEMOS_CAP = int(os.environ.get("BALROG_DEMOS_CAP", 3000))  # balrog_demo_convert.py output: real BALROG expert-demo trajectories re-rendered as "Observation: ... assistant: <action>" SFT rows, so the model sees this prompt shape at least once before a BALROG eval round instead of only ever being evaluated on it untrained. Overridable via env var for lever-isolation sweeps that vary the demo-data mixture ratio without editing this file between runs.
 BALROG_DEMOS_ONLY = os.environ.get("BALROG_DEMOS_ONLY", "") == "1"  # when set, skip every other source and TinyStories entirely -- an isolation-test mixture of pure BALROG demo data, for measuring whether diluting demo data with the rest of the mixture is itself a lever
+BALROG_SELFPLAY_CAP = int(os.environ.get("BALROG_SELFPLAY_CAP", 1500))  # balrog_selfplay_convert.py output: our OWN checkpoint's real self-play rollouts, filtered to episode_return>0 -- a rejection-sampling flywheel on top of the expert-demo bootstrap, same self-distillation-limit convention as FORGE_CAP/ACTION_FORGE_CAP
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -279,23 +280,35 @@ def main():
                 if n_balrog_demos >= BALROG_DEMOS_CAP:
                     break
 
+    n_balrog_selfplay = 0
+    balrog_selfplay = []
+    balrog_selfplay_path = os.path.join(NPC, "balrog_selfplay.jsonl")
+    if os.path.exists(balrog_selfplay_path):
+        for row in read_jsonl(balrog_selfplay_path):
+            if clean(row["text"]):
+                balrog_selfplay.append(row["text"])
+                n_balrog_selfplay += 1
+                if n_balrog_selfplay >= BALROG_SELFPLAY_CAP:
+                    break
+
     if BALROG_DEMOS_ONLY:
         # Isolation-test mixture: pure BALROG demo data, nothing else,
         # no TinyStories -- measures whether the rest of the mixture
         # dilutes/interferes with format-learning from demo data alone,
         # a real lever candidate this can't distinguish from without it.
-        texts = list(balrog_demos)
+        texts = list(balrog_demos) + list(balrog_selfplay)
         tmpl = []
-        print(f"BALROG_DEMOS_ONLY=1 -- balrog_demos {n_balrog_demos} | total {len(texts)}")
+        print(f"BALROG_DEMOS_ONLY=1 -- balrog_demos {n_balrog_demos} | balrog_selfplay {n_balrog_selfplay} | total {len(texts)}")
     else:
         texts.extend(balrog_demos)
+        texts.extend(balrog_selfplay)
         tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
         texts.extend(tmpl[:TEMPLATE_CAP])
         print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
               f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
               f"kaggle_fantasy {n_kaggle_fantasy} | kaggle_wiki {n_kaggle_wiki} | "
               f"kaggle_gamearena {n_kaggle_gamearena} | kaggle_werewolf {n_kaggle_werewolf} | "
-              f"balrog_demos {n_balrog_demos} | "
+              f"balrog_demos {n_balrog_demos} | balrog_selfplay {n_balrog_selfplay} | "
               f"template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
     ids = []

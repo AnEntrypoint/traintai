@@ -1307,3 +1307,48 @@ fix could plausibly matter -- Crafter/NLE's ceiling is architectural and
 this fix cannot help them). Also not yet done: any concrete plan to
 raise `seq_len` past 512 for a future checkpoint generation, which is
 the only real fix for Crafter/NLE ever seeing their own observations.
+
+## BALROG self-play rejection-sampling flywheel: src/balrog_selfplay_convert.py (2026-08-06)
+
+Built the row `balrog-trajectory-to-training-data` originally asked for,
+using the real, already-verified BALROG eval-output format rather than
+the `.npz` records format (that mechanism is `balrog_demo_convert.py`'s
+job, for EXPERT demos -- this is a distinct, separate flywheel for our
+OWN checkpoint's self-play rollouts). Root-caused via direct source read
+of `balrog-inspect/balrog/evaluator.py:255-385`: `save_trajectories` in
+`config.yaml` is a stale/unread config field (grep across every `.py`
+file in a local BALROG clone found zero references) -- the REAL, always-
+on trajectory record is a `<task>_run_NN.csv` (Step/Action/Reasoning/
+Observation/Reward/Done, one row per turn) + matching `.json`
+(`episode_return`, `failed_candidates`, etc) pair every real `eval.py`
+run already writes, confirmed directly from the writer code, not
+assumed from the stale config name.
+
+`src/balrog_selfplay_convert.py` reads these CSV+JSON pairs, filters to
+episodes with `episode_return > --min-return` (default 0.0 -- BALROG's
+real reward is 0 or negative on pure failure, so any positive return is
+honest evidence of real progress), and replays each kept episode's real
+Action/Observation columns into the same messages/action shape
+`balrog_demo_convert.py` already produces -- reusing its
+`_build_messages()`/`build_row()`/`instruction_prompt_for()` directly,
+not reimplementing. Verified end-to-end with a real 2-episode fixture
+(one `episode_return=0.9`, one `episode_return=0.0`): correctly kept
+all 3 steps from the successful episode, correctly rejected the failed
+episode entirely, output rows byte-for-byte the same shape as
+`balrog_demos.jsonl`'s existing rows (confirmed by direct read of the
+output file).
+
+Wired into `st_prepare.py` via a new `BALROG_SELFPLAY_CAP=1500` env-var
+constant (same guarded-block/env-var-override pattern as
+`BALROG_DEMOS_CAP`), checked into both the `BALROG_DEMOS_ONLY` isolation
+path and the standard mixture path, added to the mixture summary print
+line. Verified via a real local `st_prepare.py` run: `balrog_selfplay 0`
+printed correctly (no `balrog_selfplay.jsonl` exists locally yet, since
+that requires a real Kaggle eval run's output, same bootstrapping gap
+`balrog_demos.jsonl` had before round 7's kernel produced it) and the
+rest of the mixture built successfully through tokenization to a real
+23,135-row total -- the wiring itself is confirmed correct; only the
+actual data collection (running this converter against a real Kaggle
+eval.py output directory, most naturally round 8's own eval run since
+it's the first round with a real positive BabyAI signal to select on)
+remains as a follow-up training-round task, not a code gap.
