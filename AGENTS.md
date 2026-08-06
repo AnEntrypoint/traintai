@@ -1472,3 +1472,48 @@ hypothesis is ruled out and the real cause lies elsewhere in the
 SPMD/Embedding interaction itself, needing further investigation
 (e.g. the torch_xla 2.4.x downgrade candidate from the same research
 pass).
+
+## TPU SIGABRT root cause CONFIRMED: stale-process/subprocess conflict, plus a real unrelated bug found (2026-08-07)
+
+`heclgang/tpuspmdverify2` (single-process test, `train.main()` called
+in-process instead of via a `!python3` subprocess) got PAST the exact
+point where the original SIGABRT happened -- real, decisive evidence
+the stale-process hypothesis was correct. `setup_spmd_mesh()` completed
+successfully (`tpu_chip_count(): 8`, real SPMD mesh built, matching
+torch_xla's own real warning about "one-time overhead to setup" SPMD
+mode on already-initialized tensors -- benign, not an error), and
+execution proceeded well past the `torch_xla::tensor_ops::Embedding()`
+call site that crashed the original run entirely.
+
+Instead, v1 hit a completely different, mundane, real bug: `KeyError: 0`
+at `train.py:121`, in `print(f"SPMD mesh active: sharding batches
+across {spmd_mesh.shape()[0]} XLA chips")`. Confirmed via the original
+`tpuspmdverify` run's own real captured output
+(`mesh.shape(): OrderedDict({'batch': 8})`) that `torch_xla`'s
+`Mesh.shape()` returns an `OrderedDict` keyed by axis name (`'batch'`),
+not an indexable sequence -- `[0]` on a dict raises `KeyError: 0` since
+dict subscripting is a key lookup, not positional. This bug existed in
+`device.py`'s SPMD code from the moment it was written and was
+UNREACHABLE until this session's TPU test actually got far enough to
+hit it -- the original SIGABRT was masking it entirely. Fixed:
+`spmd_mesh.shape()['batch']`.
+
+**Standing conclusion**: the real, confirmed root cause of the original
+SIGABRT crash was launching `train.py` as a fresh `!python3` subprocess
+in the SAME Kaggle TPU kernel session AFTER an earlier notebook cell
+had already called `xr.use_spmd()`/done real sharded-tensor work in the
+notebook's own long-lived Python process -- a process-level PJRT/TPU-
+client conflict, consistent with the real (if old and resolution-
+unconfirmed) torch_xla issue #3214 precedent found by this session's
+research pass. **Permanent fix, now the standing discipline for any
+future TPU kernel work**: never run `train.py` (or any XLA/SPMD-touching
+script) via a `!python3` subprocess shell-out in a notebook cell that
+follows an earlier cell already using the XLA/SPMD runtime -- either
+call the script's own `main()` in-process (as `tpuspmdverify2` now
+does), or ensure the TPU/SPMD runtime is touched by exactly one process
+for the kernel's entire lifetime.
+
+v2 (with the real `Mesh.shape()` fix) launched; pending real confirmation
+that actual training steps complete and print loss numbers on real TPU
+v5e-8 hardware, which is the final closure bar this PRD row set from
+the start.
