@@ -2068,3 +2068,30 @@ account. `kaggle kernels push` returns "Maximum weekly GPU quota of
 actually attempted and returned this real error. Round 9's retry
 remains fully prepared (code committed, ready to push) for whenever the
 quota resets.
+
+## gm-continue confirming pass, round 2: re-verified round 9 clean data (2026-08-07)
+
+Follow-up confirming pass: background download of round 9's missing
+per-episode `*_run_*.json` files (needed alongside the already-pulled
+CSVs) completed. Re-ran
+`balrog_selfplay_convert.py --results-dir .../2026-08-07_12-38-30_naive_tinylm --seq-len 2048`
+against the now-complete local trajectory data (still zero GPU use,
+pure local reprocessing). Real result identical to the prior pass:
+**17 clean rows** (babyai 2/30 episodes kept -> 3 rows, crafter 2/15
+episodes kept -> 14 rows; babaisai/minihack/nle/textworld all kept 0 --
+babaisai/nle every episode invalid-only, minihack/textworld had zero
+episodes in this results dir). Confirms the conversion is deterministic
+and the earlier pass's 17-row output was already the complete, correct
+result from this trajectory set -- not a partial read.
+
+Manually re-inspected rows 1, 4, 6, 8 directly from the output file:
+every trailing `assistant:` target action is genuine valid game
+vocabulary ("turn left", "Do", "Noop") with no raw-completion garbage
+and no leaked `[VERB: ...]`-style fragments -- consistent with the
+contamination fix. Re-published to `heclgang/traintai-selfplay-data`
+via `kaggle datasets version` (same 17-row content, byte-identical to
+the prior publish).
+
+No further real, reachable, non-GPU work was found. The GPU quota
+exhaustion remains the sole blocker for round 9's actual training
+retry.
