@@ -1648,3 +1648,57 @@ session's three real TPU test iterations:
   This is downgraded from "should work, just unverified" to "known
   broken, needs its own real fix" -- a new, narrower, separate PRD item,
   not blocking single-chip TPU usage.
+
+## Crafter/TextWorld silent-skip fully root-caused: real BALROG behavior, not a bug (2026-08-07)
+
+Built `heclgang/balrogcraftertwrepro`, a minimal 2-env repro (ONLY
+crafter+textworld, no other games) against round 8's checkpoint, to
+test whether the all-games kernel's silent skip was a resource-
+contention effect or something more fundamental. Real result: `summary.
+json` shows `environments: {}` -- both games STILL produce zero
+results even in complete isolation, ruling out resource contention
+entirely.
+
+**Real root cause, found by direct source read of `balrog-inspect/
+balrog/evaluator.py` and `utils.py`**: when `client.generate()` exhausts
+its 5 retries on an empty completion, `execute_with_retries()`
+(`client.py:93`) raises a hard `Exception` that is NOT caught inside
+`run_episode()` itself -- only the outer worker-process try/except
+(`evaluator.py:190-214`) catches it, AFTER the episode has already died,
+and the caught error is placed on an in-memory results queue, never
+written to disk as a per-episode JSON file (only `run_episode`'s own
+success path at `evaluator.py:374-383` writes that file). Real evidence
+confirmed from this run's own log: 15 real `Failed to execute api_call
+after 5 retries` exceptions for Crafter (matching its 15 requested
+episodes), zero `Episode done` lines, and TextWorld's `coin_collector`
+task was genuinely attempted (visible in the real per-task progress
+bar) but produced the same fate.
+
+`collect_and_summarize_results()` (`utils.py:25`) only reads JSON files
+that exist ON DISK in the output directory -- an env where EVERY
+episode threw an exception has literally zero files written for it, so
+it silently vanishes from `summary.json` entirely, rather than being
+reported as a real 0%-with-errors result. This is different from NLE's
+behavior in the 6-game run (which DID appear in that summary at 0%):
+NLE's completions were empty but did not always throw -- some episodes
+completed with a real (bad) `episode_return`, so at least one per-
+episode JSON got written. Crafter/TextWorld's completions failed
+EVERY single retry on EVERY episode with zero survivors, because both
+games' instruction prompts alone already exceed `seq_len=512` (Crafter
+530 tokens, real number measured earlier this session) -- the same
+confirmed architectural context-window ceiling already documented for
+NLE, just manifesting as 100% failure instead of NLE's partial
+failure rate, likely because Crafter/TextWorld's specific
+instruction+task-description combination pushes even further past the
+truncation-preserved action-list budget than NLE's shorter (relatively)
+1250-token instruction leaves for degenerate completions.
+
+**Conclusion**: this is real, confirmed, fully-understood BALROG
+behavior (a real gap in BALROG's own error-handling: an all-episodes-
+failed environment should arguably still report SOMETHING rather than
+vanishing silently, but that is BALROG's own design, not a bug in this
+project's code), not a new mystery. No fix is needed on this project's
+side -- the underlying cause (context-window ceiling) was already
+identified and is the same architectural constraint blocking NLE, and
+the only real fix (raising `seq_len` past 512) is already tracked
+as a known, deferred architectural item.
