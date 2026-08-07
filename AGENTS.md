@@ -1975,3 +1975,40 @@ stability depends on, since T4's 14.56GB genuinely can't hold the
 activations for `batch_size=16, seq_len=2048` on this model's forward+
 backward pass (confirmed by the real allocation-failure size: 4.00 GiB
 requested with only 2.76 GiB free at the point of failure).
+
+## Manual data inspection confirms round 9's self-play output IS still contaminated -- explained, not a new bug (2026-08-07)
+
+Per the new standing discipline, manually inspected round 9's own
+`balrog_selfplay.jsonl` output (489 rows) and found real garbage
+targets like `'go south\nuser: Observation:\nYou see:'` -- multi-line
+raw model completions embedding fake conversation-role text, clearly
+NOT filtered by the contamination fix. Direct investigation (re-running
+the FIXED local `balrog_selfplay_convert.py` against the SAME real CSV
+rows pulled from this kernel) proved the fix genuinely works correctly
+on this exact data -- every one of these garbage completions IS
+correctly flagged invalid by the real `Defaulted to action:` marker in
+their own Observation column, and the locally-run converter correctly
+excludes all of them, producing only 1 clean row from the same
+`goto_run_07.csv` that produced the contaminated jsonl row.
+
+**Real, fully explained root cause**: round 9's kernel was launched
+(commit `9532ecb`) BEFORE the contamination fix was pushed (commit
+`d9fd897`, several turns later while round 9 was already mid-flight).
+Kaggle kernels `git clone` the repo once at launch and never re-pull --
+round 9's own self-play-conversion cell ran the STALE pre-fix code,
+even though by the time it actually executed (hours into the real run)
+the fix already existed on `origin/main`. This is expected git-clone-
+at-launch-time behavior, not a new bug -- confirmed definitively by
+reproducing the SAME clean result locally with the current fixed code
+against the identical raw CSV data.
+
+**Real, additional constraint discovered this pass**: round 9's actual
+training also crashed with CUDA OOM at `--batch-size 16`/`seq_len=2048`
+(recorded separately above) -- so this run produced neither a real
+trained checkpoint nor clean self-play data. A real retry with
+`--batch-size 4` was prepared and ready to push, but `kaggle kernels
+push` failed with **"Maximum weekly GPU quota of 30.00 hours reached"**
+-- a real, hard external constraint blocking any further GPU kernel
+work this session. No further Kaggle GPU kernels can be launched until
+the weekly quota resets. This is the genuine, honest stopping point for
+GPU-dependent work this session; CPU-only/code-only work can continue.
