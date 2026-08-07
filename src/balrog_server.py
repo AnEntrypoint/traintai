@@ -257,11 +257,22 @@ def main():
     ap.add_argument("--batch-window-ms", type=int, default=15,
                      help="how long a worker waits for more requests to join a forming "
                           "batch after the first one arrives, before running it anyway")
+    ap.add_argument("--seq-len", type=int, default=None,
+                     help="override the checkpoint's own saved seq_len -- RoPE has no "
+                          "learned position parameters (cos/sin are recomputed fresh, "
+                          "not saved in the checkpoint), so a checkpoint trained at a "
+                          "shorter seq_len loads and runs cleanly at a longer one; use "
+                          "this to serve real context beyond what the checkpoint was "
+                          "trained at, e.g. for BALROG games whose instruction prompts "
+                          "exceed the checkpoint's original seq_len")
     args = ap.parse_args()
 
     devices = resolve_devices()
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    cfg = Config(**ck["cfg"])
+    cfg_dict = dict(ck["cfg"])
+    if args.seq_len is not None:
+        cfg_dict["seq_len"] = args.seq_len
+    cfg = Config(**cfg_dict)
     tok = Tokenizer.from_file(os.path.join(DATA, "bpe32768.json"))
 
     queues = []

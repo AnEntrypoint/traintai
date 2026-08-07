@@ -5,8 +5,9 @@ instruction_prompt_for()/build_prompt() functions balrog_demo_convert.py
 and balrog_server.py use at both training-data-build and serving time --
 no reimplementation, no assumed token counts.
 
-Run: UV_NO_SYNC=1 uv run python src/balrog_context_probe.py
+Run: UV_NO_SYNC=1 uv run python src/balrog_context_probe.py [--seq-len N]
 """
+import argparse
 import os
 
 from tokenizers import Tokenizer
@@ -66,8 +67,15 @@ TASK_PER_GAME = {
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seq-len", type=int, default=None,
+                     help="override Config's default seq_len -- RoPE has no learned "
+                          "position parameters, so this measures headroom at any target "
+                          "length without needing an actual checkpoint at that length")
+    args = ap.parse_args()
+
     tok = Tokenizer.from_file(os.path.join(DATA, "bpe32768.json"))
-    seq_len = Config().seq_len
+    seq_len = args.seq_len if args.seq_len is not None else Config().seq_len
     print(f"seq_len = {seq_len}\n")
     print(f"{'game':10s} {'instr_toks':>10s} {'turn1_toks':>10s} {'fits_1turn':>10s} {'fits_2turn_est':>14s}")
 
