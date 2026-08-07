@@ -32,6 +32,7 @@ import csv
 import glob
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -70,13 +71,41 @@ def load_episode_return(json_path):
     return float(log.get("episode_return", 0.0))
 
 
+INVALID_ACTION_MARKER = "Your previous output did not contain a valid action."
+INVALID_ACTION_RE = re.compile(re.escape(INVALID_ACTION_MARKER) + r" Defaulted to action: (.*?)\n")
+
+
 def replay_csv_steps(csv_path, env_name, task):
     """Yields (messages, action) pairs from a real eval-run CSV, mirroring
     balrog_demo_convert.py's replay_steps() shape exactly so build_row()
     needs no changes. The instruction prompt is reconstructed the same
     way (instruction_prompt_for()); the first CSV row's own Observation
     column supplies the same first_long_term_context balrog_demo_convert.py
-    derives from the first .npz entry."""
+    derives from the first .npz entry.
+
+    Real, confirmed bug fixed here: evaluator.py's CSV writer logs the
+    RAW model completion in the Action column (evaluator.py:329,
+    `action = response.completion` runs AFTER the real validated action
+    was already used to step the env), not the validated action that
+    was actually taken -- so a row where the model's raw output was
+    garbage still has that garbage recorded as "the action". The real
+    validated fallback action surfaces as a warning string injected
+    into THIS SAME ROW's own Observation column ("Your previous output
+    did not contain a valid action. Defaulted to action: <X>",
+    evaluator.py:317-328 -- `env.step(action)` with the ALREADY-
+    validated action runs first, producing the observation the marker
+    gets prepended to, and only then does line 329 overwrite `action`
+    with the raw completion for the CSV write -- so the marker and the
+    garbage action always land in the same row, not adjacent rows).
+    Training on the raw column verbatim was teaching the model to
+    reproduce its own worst completions -- both as a training TARGET
+    and, just as damaging, as HISTORY CONTEXT for every later step in
+    the same episode. Fixed by recovering BALROG's own real validated
+    action from the marker text and using THAT for history whenever a
+    row was invalid, and by skipping invalid rows entirely as training
+    targets -- the model only ever sees and is trained to reproduce
+    real, valid actions, both in its own past and as the thing to
+    predict next."""
     with open(csv_path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, escapechar="˘")
         rows = list(reader)
@@ -92,10 +121,14 @@ def replay_csv_steps(csv_path, env_name, task):
 
     for row in rows:
         action = row["Action"]
-        messages = _build_messages(instruction, history, last_long, "")
-        yield messages, action
+        m = INVALID_ACTION_RE.search(row["Observation"])
+        was_invalid = m is not None
 
-        history.append((last_long, action))
+        if not was_invalid:
+            messages = _build_messages(instruction, history, last_long, "")
+            yield messages, action
+
+        history.append((last_long, m.group(1) if was_invalid else action))
         last_long = row["Observation"]
 
         if row.get("Done", "").strip().lower() in ("true", "1"):

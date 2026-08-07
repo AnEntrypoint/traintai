@@ -1872,3 +1872,52 @@ serves at `balrog_server.py --seq-len 2048` and runs all 6 games with
 every proven per-game fix from this campaign.
 
 Pushed and confirmed `KernelWorkerStatus.RUNNING`.
+
+## Real bug found and fixed: self-play data was training on raw garbage completions, not validated actions (2026-08-07)
+
+User directly inspected raw `balrog_selfplay.jsonl` rows and found real
+contamination: assistant completions included pure gibberish ("Youre
+now in a leaf every rumor within a walk roads to your stomach", "take
+one They are in a kitchen Mind the floor and it are") interleaved with
+real valid actions, both as training TARGETS and inside conversation
+HISTORY for later steps in the same episode.
+
+**Real root cause, confirmed by direct read of `balrog-inspect/balrog/
+evaluator.py:307-340`**: `env.step(action)` runs with the ALREADY-
+validated action (`env.check_action_validity(response.completion)`),
+producing a real observation -- if the raw completion was invalid, a
+warning ("Your previous output did not contain a valid action.
+Defaulted to action: <X>") is prepended to THIS SAME observation. Only
+THEN does line 329 reassign `action = response.completion`, overwriting
+the validated action with the RAW model completion, which is what
+actually gets written to the CSV's `Action` column. So every row where
+the model's raw completion was garbage has that garbage recorded
+verbatim as "the action taken," with the real validated fallback action
+only recoverable by parsing the warning text out of that same row's own
+Observation column.
+
+`balrog_selfplay_convert.py`'s `replay_csv_steps()` was reading the
+`Action` column completely at face value, meaning every self-play
+training row from an episode with ANY invalid-completion step was
+teaching the model to reproduce its own worst, most degenerate output --
+directly undermining the whole point of the self-play rejection-
+sampling flywheel. Fixed: rows whose Observation carries the invalid-
+action marker are (1) never yielded as a training target, and (2) have
+their conversation-history entry substituted with BALROG's own real
+validated fallback action (parsed out of the marker text itself via
+regex), not the raw garbage -- so later steps in the same episode never
+see contaminated history either. Verified locally with a real 3-step
+fixture matching the exact pattern the user found: the fix correctly
+excludes the garbage step as a target AND correctly substitutes the
+validated action into the next step's history, confirmed by direct
+inspection of the real output JSONL.
+
+This fix affects every future run of `balrog_selfplay_convert.py`
+(round 9's own self-play generation, if it runs this converter again,
+will benefit automatically) but does NOT retroactively clean the
+`heclgang/traintai-selfplay-data` dataset already uploaded and used in
+round 9's training mixture -- that data was collected and converted
+BEFORE this fix landed, so it still contains the contamination. This is
+a real, known gap: round 9's real result (once it completes) should be
+interpreted with this caveat, and a future round should re-generate
+self-play data with the fixed converter before trusting it as clean.
