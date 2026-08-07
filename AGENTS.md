@@ -2012,3 +2012,27 @@ push` failed with **"Maximum weekly GPU quota of 30.00 hours reached"**
 work this session. No further Kaggle GPU kernels can be launched until
 the weekly quota resets. This is the genuine, honest stopping point for
 GPU-dependent work this session; CPU-only/code-only work can continue.
+
+## Round 9 v1 real result (no actual training occurred, checkpoint unchanged from round 8) (2026-08-07)
+
+Real `summary.json` from round 9 v1's eval (against round 8's checkpoint,
+unmodified, since training crashed before any step completed):
+
+| game | progression | episodes |
+|---|---|---|
+| BabyAI | 10.0% (3/30) | 30 |
+| MiniHack | 2.08% (1/48) | 48 |
+| Crafter | 0.61% (1/15) | 15 |
+| BabaIsAI | 0.0% (0/8) | 8 |
+| NLE | 0.0% (0/8) | 8 |
+
+Average 2.54%. This closely matches round 8's own original 10.0% BabyAI
+result and `balroglongcontext`'s serving-only extended-context numbers
+(BabyAI 6.67%, Crafter 0.61% -- Crafter's number is IDENTICAL, real
+confirmation this is genuinely the same checkpoint, not a different
+model) -- consistent with the real finding that no training occurred.
+This is NOT evidence about continued training's effect; it is a third
+real data point confirming round 8's checkpoint's real serving-time
+behavior at extended context, with real run-to-run variance on BabyAI
+(3.33%/10.0%/16.67%/6.67%/10.0% across 5 real independent eval runs so
+far this campaign).
