@@ -1948,3 +1948,30 @@ contaminated 416-row version when this fix landed -- its real result,
 once complete, should be interpreted with that caveat; a future round
 should train against this clean version to measure the real effect of
 removing the contamination.
+
+## Round 9 real crash: CUDA OOM at seq_len=2048, batch_size=16 still too large for T4 (2026-08-07)
+
+Per the new standing discipline (manually inspect raw data every round,
+not just summary stats), the user pasted round 9's live kernel log
+directly. Real finding: training crashed with `torch.OutOfMemoryError:
+CUDA out of memory. Tried to allocate 4.00 GiB` during the FIRST
+backward pass (`step 0`, `train 3.7048 | val 3.7154`) -- `--batch-size
+16` (already halved from round 8's 32 as a real anticipated adjustment
+for 4x longer sequences) was still too large for a T4's 14.56GB at
+`seq_len=2048`. `train.py`'s own real fallback behavior (`runs/ple-
+r9longctx-s0-latest.pt` used by the eval cell) meant the subsequent
+eval ran against a checkpoint that was NEVER actually updated by any
+real training step -- effectively round 8's own checkpoint, unchanged,
+not a real seq_len=2048-trained model. Any per-game numbers from this
+run's eval should be interpreted as a (partial) re-confirmation of
+`balroglongcontext`'s serving-only result, NOT as evidence about
+continued training's real effect -- that experiment did not actually
+run.
+
+**Real, necessary fix for a genuine round 9 retry**: `--batch-size 16`
+at `seq_len=2048` needs to shrink further (e.g. 4-8) and/or use
+gradient accumulation to preserve the effective batch size training
+stability depends on, since T4's 14.56GB genuinely can't hold the
+activations for `batch_size=16, seq_len=2048` on this model's forward+
+backward pass (confirmed by the real allocation-failure size: 4.00 GiB
+requested with only 2.76 GiB free at the point of failure).
