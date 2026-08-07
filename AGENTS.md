@@ -1517,3 +1517,37 @@ v2 (with the real `Mesh.shape()` fix) launched; pending real confirmation
 that actual training steps complete and print loss numbers on real TPU
 v5e-8 hardware, which is the final closure bar this PRD row set from
 the start.
+
+## Real bugs found and fixed in the all-games eval kernel: missing baba install + nle-stub PYTHONPATH shadowing (2026-08-07)
+
+v5 (with the minihack pip fix from v4) still only produced a BabyAI
+result (10.0%, 3/30 -- within normal variance of round 8's own 10.0%
+and v4's 16.67%). Two NEW real bugs found via direct log inspection:
+
+1. **BabaIsAI never installed**: `ModuleNotFoundError: No module named
+   'baba'` -- this kernel's cell-5 never carried over round 3's real
+   `pip install "baba @ git+https://github.com/nacloos/baba-is-ai.git"`
+   step, only `minigrid` and BALROG's own `-e . --no-deps`. Fixed by
+   adding the real install.
+2. **The fake `nle` stub (built for Crafter/BabaIsAI, which only need
+   `NLE.StepStatus.ABORTED` on a codepath their own wrappers never
+   exercise) shadowed the REAL `balrog-nle` package** installed one
+   cell later: `/tmp/nle_stub` stayed on `PYTHONPATH` for the rest of
+   the kernel, so MiniHack's `from nle.nethack import Command,
+   CompassDirection` resolved to the stub's incomplete fake package
+   instead of the real compiled `nle` extension, crashing with
+   `ModuleNotFoundError: No module named 'nle.nethack'`. This is a
+   genuinely new bug class this campaign hadn't hit before -- every
+   earlier round only ever needed ONE of {stub, real nle}, never both
+   in the same kernel, so the shadowing risk never manifested until
+   this session's first combined-game run. Fixed by removing
+   `/tmp/nle_stub` from `PYTHONPATH` once the real `nle`/`minihack` are
+   installed (Crafter/BabaIsAI's stub-dependent fix already ran and
+   took effect earlier in the same cell sequence, before this removal).
+
+v6 (both fixes) pushed and running. This 6-game-in-one-kernel design is
+proving to be a genuinely harder integration test than any single-game
+round this campaign ran before -- each of rounds 1-6 solved exactly one
+game's dependency conflicts in isolation; combining all 6 surfaces
+real cross-game interaction bugs (like the PYTHONPATH shadowing above)
+that no single-game kernel could ever have hit.
