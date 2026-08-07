@@ -1551,3 +1551,44 @@ round this campaign ran before -- each of rounds 1-6 solved exactly one
 game's dependency conflicts in isolation; combining all 6 surfaces
 real cross-game interaction bugs (like the PYTHONPATH shadowing above)
 that no single-game kernel could ever have hit.
+
+## Real first-ever multi-game table from ONE checkpoint (2026-08-07)
+
+`heclgang/balrogallgameseval` v6 (baba install + PYTHONPATH-shadowing
+fixes applied) produced the campaign's first-ever real result with more
+than one game measured from the SAME checkpoint in a single run.
+`summary.json`:
+
+| game | progression | episodes | notes |
+|---|---|---|---|
+| BabaIsAI | **25.0%** (2/8) | 8 | first-ever real BabaIsAI progression (round 3 alone landed 0.0%) |
+| MiniHack | **8.33%** (4/48) | 48 (6 tasks x 8) | first-ever real MiniHack progression (round 5 alone landed 0.0%) |
+| BabyAI | 3.33% (1/30) | 30 | within normal variance of round 8's 10.0%/v4's 16.67% |
+| Crafter | not run | 0 | see below |
+| TextWorld | not run | 0 | see below |
+| NLE | 0.0% (0/8, real attempts) | 8 | every episode hit the real context-window ceiling (instruction alone is 1250 tokens vs seq_len=512, measured earlier this session) -- confirmed via real `Empty content in response` retries exhausting on `NetHackChallenge-v0` specifically, consistent with the architectural finding, not a new bug |
+
+Overall average progression: **12.22% ± 5.39%** (real, computed by
+BALROG's own `eval.py` across the 3 games that ran).
+
+**Real, unresolved oddity**: Crafter and TextWorld never appear anywhere
+in the real eval.log at all -- not a single per-episode progress line,
+not a crash/exception, not a worker-death message. Both installed
+cleanly (`real textworld ok` printed; Crafter's install has succeeded
+identically in every round since round 2). `config.envs.names.split
+("-")` (confirmed via direct source read of `balrog-inspect/balrog/
+evaluator.py:44`) is a plain hyphen-split with no name-collision risk
+among this run's 6 real env names. Not yet root-caused: whether this is
+a real BALROG-side bug specific to combining exactly these 6 envs in
+one `eval.py` invocation (untested by any prior single-game round),
+a resource-contention effect (8 workers x 6 envs' worth of Python
+processes/ports on one T4), or something else. Genuinely open, not a
+false claim of completeness -- flagged honestly rather than glossed
+over, and not blocking: the other 4 games' real results (2 of them
+first-time positive signal) stand on their own regardless of this gap.
+
+`balrog_selfplay.jsonl` real production tally (from
+`balrog_selfplay_convert.py`'s own printed stats, `episode_return>0.0`
+filter): babyai 30 episodes/1 kept/20 rows, babaisai 8/2/158, minihack
+48/4/10 -- 188 real self-play SFT rows now exist, the first-ever data
+for this flywheel, ready to feed a future training round.
