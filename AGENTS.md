@@ -1921,3 +1921,30 @@ BEFORE this fix landed, so it still contains the contamination. This is
 a real, known gap: round 9's real result (once it completes) should be
 interpreted with this caveat, and a future round should re-generate
 self-play data with the fixed converter before trusting it as clean.
+
+## Clean self-play data regenerated and published: real magnitude of the contamination confirmed (2026-08-07)
+
+Pulled the real per-episode CSV files from `heclgang/balroglongcontext`'s
+completed kernel output and re-ran the FIXED `balrog_selfplay_convert.py`
+against them (no new BALROG eval run needed -- same real trajectory
+data, just re-converted with the contamination fix). Real result:
+**13 clean rows, down from 416 in the earlier contaminated run** -- a
+dramatic real confirmation of how severe the bug was: the vast majority
+of what was being called "self-play training data" was actually the
+model's own garbage completions being fed back in as if they were
+correct, ground-truth actions.
+
+Direct inspection of the clean output confirms every single training
+target is now genuinely valid ("go forward", "turn left", "Noop", "Do",
+"Move South" -- real BALROG action vocabulary) with zero gibberish
+anywhere, a stark contrast to the contaminated version's mix of real
+actions and nonsense NPC-dialog-flavor text.
+
+Published the clean 13-row dataset to `heclgang/traintai-selfplay-data`
+via `kaggle datasets version` (single-file dataset, no other files at
+risk of being silently dropped this time). Round 9
+(`heclgang/balrogr9longctx`) was already running against the OLD
+contaminated 416-row version when this fix landed -- its real result,
+once complete, should be interpreted with that caveat; a future round
+should train against this clean version to measure the real effect of
+removing the contamination.
