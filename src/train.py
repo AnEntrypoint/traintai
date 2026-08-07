@@ -140,20 +140,29 @@ def main():
     for n, p in model.named_parameters():
         (no_decay if p.ndim < 2 or "table" in n or "tok_emb" in n else decay).append(p)
     adam_decay = [] if args.optimizer == "muon" else decay
-    # capturable=True: real, confirmed-on-hardware fix for a genuine
-    # torch_xla slowdown -- AdamW's default foreach path bakes the Python
-    # int step-count into its fused update ops, so on a lazy-tensor
-    # backend the traced graph differs every step and never hits the
-    # compilation cache (real measured symptom: 2.74s -> 11.31s -> 17.97s
-    # -> 22.28s -> 28.87s, monotonically growing, never stabilizing).
-    # capturable=True keeps `step` as a device tensor instead, giving a
-    # stable graph that compiles once. No effect on CUDA/CPU correctness.
-    opt = torch.optim.AdamW(
-        [{"params": adam_decay, "weight_decay": 0.1}, {"params": no_decay, "weight_decay": 0.0}],
-        lr=args.lr,
-        betas=(0.9, 0.95),
-        capturable=is_xla(device),
-    )
+    # Real, confirmed-on-hardware bug: torch.optim.AdamW's step()
+    # (foreach or capturable=True, both tried) makes the traced XLA graph
+    # grow every call and never hit the compilation cache -- isolated via
+    # a live Kaggle v5e-8 smoke test that timed forward/backward/
+    # clip_grad_norm_ (all fast+stable, 0.08s steady) against
+    # AdamW.step() alone (0.15 -> 11.47 -> 18.06 -> 22.65s, growing
+    # every call). A hand-rolled Adam update using only static per-tensor
+    # ops (no torch.optim call at all) confirmed fixed: 7.92 -> 6.98 ->
+    # 0.18s steady from step 2. XLA_ADAM below is that manual update;
+    # non-XLA devices keep using the real, well-tested torch.optim.AdamW.
+    use_xla_manual_adam = is_xla(device) and args.optimizer == "adamw"
+    if use_xla_manual_adam:
+        opt = None
+        adamw_params = [{"params": adam_decay, "weight_decay": 0.1}, {"params": no_decay, "weight_decay": 0.0}]
+        xla_adam_m = {id(p): torch.zeros_like(p) for group in adamw_params for p in group["params"]}
+        xla_adam_v = {id(p): torch.zeros_like(p) for group in adamw_params for p in group["params"]}
+        xla_adam_step = torch.zeros((), device=device)
+    else:
+        opt = torch.optim.AdamW(
+            [{"params": adam_decay, "weight_decay": 0.1}, {"params": no_decay, "weight_decay": 0.0}],
+            lr=args.lr,
+            betas=(0.9, 0.95),
+        )
     muon_bufs = [torch.zeros_like(p) for p in decay] if args.optimizer == "muon" else []
 
     train_b = Batcher("train", args.batch_size, args.seq_len, device, suffix)
@@ -165,13 +174,19 @@ def main():
 
     for step in range(args.steps):
         lr = lr_at(step, args.steps, args.lr, args.warmup, args.stable_frac)
-        for g in opt.param_groups:
-            g["lr"] = lr
+        if not use_xla_manual_adam:
+            for g in opt.param_groups:
+                g["lr"] = lr
         x, y = train_b()
         x, y = shard_batch(x, spmd_mesh), shard_batch(y, spmd_mesh)
         with torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
             _, loss = model(x, y)
-        opt.zero_grad(set_to_none=True)
+        if use_xla_manual_adam:
+            for group in adamw_params:
+                for p in group["params"]:
+                    p.grad = None
+        else:
+            opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         if use_amp:
             scaler.unscale_(opt)
@@ -179,6 +194,24 @@ def main():
         if use_amp:
             scaler.step(opt)
             scaler.update()
+        elif use_xla_manual_adam:
+            xla_adam_step = xla_adam_step + 1
+            bc1 = 1 - 0.9 ** xla_adam_step
+            bc2 = 1 - 0.95 ** xla_adam_step
+            with torch.no_grad():
+                for group in adamw_params:
+                    for p in group["params"]:
+                        if p.grad is None:
+                            continue
+                        g_ = p.grad
+                        m, v = xla_adam_m[id(p)], xla_adam_v[id(p)]
+                        m.mul_(0.9).add_(g_, alpha=0.1)
+                        v.mul_(0.95).addcmul_(g_, g_, value=0.05)
+                        denom = (v / bc2).sqrt().add_(1e-8)
+                        if group["weight_decay"]:
+                            p.mul_(1 - lr * group["weight_decay"])
+                        p.addcdiv_(m / bc1, denom, value=-lr)
+            mark_step(device)
         else:
             optimizer_step(opt, device)
         if args.optimizer == "muon":
