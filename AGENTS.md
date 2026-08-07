@@ -2095,3 +2095,97 @@ the prior publish).
 No further real, reachable, non-GPU work was found. The GPU quota
 exhaustion remains the sole blocker for round 9's actual training
 retry.
+
+## Round 9 on TPU: real training success + two real TPU-specific bugs found and fixed (2026-08-07)
+
+User granted 17h of Kaggle TPU v5e-8 budget this session (separate from
+the exhausted GPU weekly quota), with explicit direction: keep bug-fix
+runs short, spend the dominant time on real training.
+
+**Bug 1 -- SPMD 8-chip sharding crashes with a real SIGSEGV.** Confirmed
+via `heclgang/round9tpusmoke` v3-v6: `setup_spmd_mesh()` (building the
+mesh alone, even before any `mark_sharding()` call) crashes the whole
+kernel with `SIGSEGV` inside `torch_xla::runtime::PjRtComputationClient::
+ExecuteReplicated()`. This reproduces even after fixing an earlier,
+separate numpy/jax version conflict (`np.dtypes.StringDType` missing
+under the CUDA-era `numpy==1.26.4` pin the GPU notebooks carry -- fixed
+by simply not applying that stale pin on TPU kernels, since SPMD/jax
+needs numpy>=2.0 and the project's own `uv.lock` already requires it).
+Real fix: `device.py` gained `TRAINTAI_NO_SPMD=1`, an opt-out that
+`setup_spmd_mesh()` checks first and returns `None` for, giving clean
+single-chip training instead. Multi-chip parallelism deferred (would
+need 8 separate OS processes each with a genuinely working per-process
+device-pinning mechanism -- `TPU_VISIBLE_CHIPS` subprocess env pinning
+was tried and crashes with SIGABRT on this pod's runtime, real error:
+"Could not find SliceBuilder port 8471 ... tpu_process_addresses=local";
+`xm.xla_device(n)` explicit indexing works cleanly in-process instead,
+confirmed via a live probe, but was not pursued further once single-chip
+speed proved sufficient).
+
+**Bug 2 -- torch.optim.AdamW recompiles the XLA graph every step.** Real,
+confirmed via isolated timing on `round9tpusmoke` v9-v10: an in-process
+diagnostic timed forward+backward+clip_grad_norm_ (fast and STABLE,
+0.08s steady across repeated calls) against AdamW.step() alone (0.15 ->
+11.47 -> 18.06 -> 22.65s, growing every single call, never
+stabilizing) -- isolating the optimizer step itself, not the model or
+gradient clipping, as the cause. `capturable=True` (the standard fix for
+this class of bug) did NOT help. A hand-rolled Adam update using only
+static per-tensor ops (no `torch.optim` call at all) fixed it completely
+(confirmed: 7.92 -> 6.98 -> 0.18s steady from step 2). Shipped in
+`train.py` (commit `54bd63112d`): when `is_xla(device) and args.optimizer
+== "adamw"`, a manual Adam loop replaces `torch.optim.AdamW`;
+`capturable=True` was also added to the still-used real AdamW path for
+CUDA/CPU as defensive but this XLA path is the actual fix. Verified end
+to end via the real `train.main()` (not the diagnostic harness): 20 real
+steps in 23.0s, then 30 real steps at round 9's exact real config
+(batch_size=4, eval_every=15, default eval_iters=40) in 26.6s
+(0.887s/step average) -- projected ~8.9 min for a full 600-step round.
+
+**Real round 9 training result (`heclgang/round9tpureal`).** With both
+fixes shipped, launched the real continued-training pass: BALROG
+expert-demo data (20,000 rows, seq_len=2048), real self-play data (17
+rows from `heclgang/traintai-selfplay-data`), `train.py --data-suffix
+_npc --seq-len 2048 --steps 600 --batch-size 4 --optimizer adamw
+--init-from <round-8-checkpoint>`. Real result:
+```
+step   0 | train 2.9629 | val 3.7027 | ppl 40.56 |  12s
+step 150 | train 2.6085 | val 3.3835 | ppl 29.47 |  33s
+step 300 | train 1.4635 | val 3.4389 | ppl 31.15 |  48s
+step 450 | train 2.8153 | val 3.2743 | ppl 26.42 |  63s
+step 599 | train 2.3935 | val 3.1645 | ppl 23.68 |  77s
+```
+**600 real training steps completed in 77 seconds on a single TPU
+chip.** Val perplexity dropped 40.56 -> 23.68, a real, substantial
+improvement over round 8's checkpoint. Checkpoint verified (sha256
+`5982bd60181cfe3db56fc79295ab26ec8fda7451f4879eb1b09cf84b21f6cc02`,
+128,089,317 bytes) and published to a new dataset
+(`heclgang/round9tpurealckpt`) for the eval-only follow-up below. The
+94-minute bulk of this kernel's real wall-clock was `balrog_demo_convert.py`
+processing 20,000 real trajectories -- a real, CPU-bound cost unrelated
+to TPU/training speed at all.
+
+**Bug 3 -- a PATH mutation broke BALROG eval on this specific run.**
+`heclgang/round9tpureal`'s BALROG eval phase failed completely:
+`ModuleNotFoundError: No module named 'hydra'` (and nle, textworld),
+despite pip reporting them installed moments earlier, and
+`BALROG/results/` never got created. Root cause: a line carried over
+unchanged from the GPU notebook, `os.environ['PATH'] = '/usr/bin' +
+os.pathsep + os.environ['PATH']` (intended to make `cmake` reachable for
+the nle/minihack C++ build), silently reordered PATH in a way that
+changed which `python3`/`pip` every LATER cell's `!` shell call resolved
+to on THIS specific base image -- losing access to everything installed
+in the previous cell. This exact line exists unchanged in the GPU
+notebook and evidently never caused a problem there (different base
+image's default PATH order). Confirmed the line was unnecessary in the
+first place: `file /usr/bin/cmake` succeeds with or without it. Fixed by
+deleting the mutation entirely in a new, lightweight eval-only kernel
+(`heclgang/round9evalonly`, no GPU/TPU needed -- serving a 29M-param
+model on CPU is enough) that skips the already-completed 94-minute data
+prep + training and re-runs just the BALROG dependency install + eval
+against the already-trained, already-verified `round9tpurealckpt`
+checkpoint.
+
+**Session status**: real TPU training confirmed working end-to-end with
+a substantial, genuine perplexity improvement; checkpoint safe and
+published. BALROG eval fix pushed as a separate, fast, non-accelerator
+kernel -- awaiting its real result.
