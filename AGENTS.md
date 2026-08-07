@@ -1702,3 +1702,37 @@ side -- the underlying cause (context-window ceiling) was already
 identified and is the same architectural constraint blocking NLE, and
 the only real fix (raising `seq_len` past 512) is already tracked
 as a known, deferred architectural item.
+
+## SPMD minimal-repro test: bare embedding under sharding works fine -- crash is real-model-specific (2026-08-07)
+
+Per explicit user direction ("do minimal TPU tests, don't burn so much
+time"), built `heclgang/tpuspmdminimal`: no traintai clone, no dataset
+build, no full training loop -- just a bare `nn.Embedding` +
+forward/backward under real SPMD sharding, comparing the baseline
+(embedding weight left unmarked, matching `device.py`'s current code)
+against the one concrete candidate fix real research surfaced (torch_xla
+issue #9735's workaround: explicitly `mark_sharding` every tensor,
+including replicated ones).
+
+Real result: **both succeeded.** `BASELINE (unmarked params) SUCCEEDED:
+torch.Size([64, 16, 32]) 35.79473876953125` and `CANDIDATE FIX
+(explicit-replicated params) SUCCEEDED: torch.Size([64, 16, 32])
+-40.078521728515625`. A bare embedding lookup + backward pass under
+real SPMD sharding on real TPU v5e-8 hardware works fine at this scale
+-- the crash confirmed in `tpuspmdverify2` v2 (real `train.py`, full
+model) does NOT reproduce with just an embedding in isolation. This
+means the real crash trigger is somewhere else in the full model
+(RoPE's precomputed `cos`/`sin` buffers, the attention mechanism, the
+PLE product-of-lookup-embeddings table, or an interaction between
+several of these under sharding) -- not resolved by this pass, and
+not chased further this session per the minimal-testing discipline.
+
+Real, honest standing state: TPU v5e-8 SPMD multi-chip sharding remains
+confirmed broken for the real production model (crash inside
+`ExecuteReplicated()`), a real open class of bug in torch_xla itself
+(issues #9046/#8057/#9735, all unresolved upstream), NOT reproducible
+in isolation with a bare embedding. Single-chip TPU training is
+confirmed fully working. Further isolation would require another real
+training-scale TPU test (e.g. bisecting the model's forward pass layer
+by layer under SPMD) -- deferred as a real, scoped future item rather
+than chased with more expensive full-model runs this session.
