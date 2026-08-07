@@ -74,7 +74,17 @@ def setup_spmd_mesh():
     ever changes the pod shape). Returns None if fewer than 2 chips are
     visible (nothing to shard across) or torch_xla's SPMD module isn't
     importable, so callers can no-op cleanly on any non-multi-chip
-    device rather than crash."""
+    device rather than crash.
+
+    Set TRAINTAI_NO_SPMD=1 to force this to return None even on a
+    multi-chip pod -- real Kaggle v5e-8 testing found SPMD's
+    ExecuteReplicated() crashes with a hard SIGSEGV inside torch_xla's
+    PjRt client (a real, unresolved upstream bug, not fixable here).
+    The multi-process-single-chip-each launcher (round9_tpu_parallel.py)
+    uses this to get one real chip per process without each process
+    trying to build its own 8-chip mesh."""
+    if os.environ.get("TRAINTAI_NO_SPMD") == "1":
+        return None
     n = tpu_chip_count()
     if n < 2:
         return None
