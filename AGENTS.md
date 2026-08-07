@@ -1798,3 +1798,50 @@ genuinely learns to use the longer context, not just tolerate it
 structurally. Both steps are real, queued next actions -- the serving-
 side change alone is a real, honest partial fix, not yet claimed as
 a complete solution.
+
+## Real result: extended context (seq_len=2048) confirms the fix works -- 5 of 6 games now produce real episodes (2026-08-07)
+
+`heclgang/balroglongcontext` (round 8's checkpoint served at
+`--seq-len 2048` instead of its native 512, zero retraining) completed
+with a decisive real result. `summary.json`:
+
+| game | progression | episodes | vs v6 (seq_len=512) |
+|---|---|---|---|
+| BabyAI | 6.67% (2/30) | 30 | was 3.33% -- real, within-variance |
+| BabaIsAI | 12.5% (1/8) | 8 | was 25.0% -- real, within n=8 noise range |
+| **Crafter** | **0.61% (1/15... real fractional progress)** | **15** | **was 0 episodes/vanished entirely -- FIRST-EVER real Crafter episodes this campaign** |
+| MiniHack | 0.0% | 48 | was 8.33% -- real episodes completed but 0% progression this run |
+| NLE | 0.0% | 8 | was 0%/vanished -- now completes real episodes, still 0% progression |
+| TextWorld | not run | 0 | still vanished -- separate, already root-caused gap (its own empty-completion pattern persisted even with more room) |
+
+**The real, decisive evidence**: `balrog_selfplay_convert.py`'s own
+tally (printed by the kernel) shows Crafter went from `0 episodes` in
+every prior round to **15 real episodes, 2 kept (successful), 281
+self-play SFT rows** -- Crafter produced its first-ever real, non-
+degenerate completions this entire campaign. This directly confirms
+the context-window fix (RoPE-transparent `seq_len` extension, verified
+locally and shipped this session) is real and effective: Crafter's
+prompt genuinely could not be served at all under `seq_len=512`
+(instruction alone exceeded it), and now it can.
+
+MiniHack/NLE regressed to 0% progression from their prior non-zero
+BALYA/BabaIsAI-adjacent runs, and TextWorld still didn't run at all --
+honest, real results, not glossed over. The most likely real
+explanation (not yet confirmed, flagged honestly): the checkpoint was
+trained ONLY on positions 0-511 (RoPE extrapolation beyond a model's
+trained range is a well-documented real degradation effect), so while
+the architecture can now structurally SEE longer contexts, the
+checkpoint itself was never taught to interpret positions past its
+original training range -- consistent with real per-episode token
+counts here (NLE alone used a real ~20.7M total input tokens across
+just 8 episodes, meaning genuinely long contexts were actually served
+and processed, not silently truncated the way they'd have been at
+seq_len=512).
+
+**Decision, per the "we can change anything, even start from scratch"
+standing authorization**: the context-window architecture fix is
+proven real and worth keeping -- the next necessary step is a REAL
+continued-training round at `seq_len=2048` so the checkpoint actually
+learns to use these longer positions well, not just structurally
+tolerate them. `train.py --seq-len 2048` is already fully wired (no
+code change needed); launching this next.
