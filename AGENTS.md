@@ -2036,3 +2036,35 @@ real data point confirming round 8's checkpoint's real serving-time
 behavior at extended context, with real run-to-run variance on BabyAI
 (3.33%/10.0%/16.67%/6.67%/10.0% across 5 real independent eval runs so
 far this campaign).
+
+## Real clean self-play data regenerated from round 9's trajectories, published (2026-08-07)
+
+Per the gm-continue confirming pass (real reachable non-GPU work found:
+round 9's own already-pulled CSV/JSON trajectory files, entirely local
+reprocessing). Pulled the missing per-episode `.json` metadata files
+alongside the already-downloaded CSVs, then re-ran the fixed
+`balrog_selfplay_convert.py --seq-len 2048` against round 9's real
+trajectory data locally (no GPU used). Real result: **17 clean rows**
+(babyai 2 kept episodes/3 rows, crafter 2 kept episodes/14 rows).
+Manually inspected every row per the standing discipline: every single
+target is genuine, valid BALROG action vocabulary ("go forward", "turn
+left", "Noop", "Do") with zero gibberish -- confirms the contamination
+fix works correctly on this second, independent real dataset too.
+
+Published this 17-row set to `heclgang/traintai-selfplay-data`,
+replacing the earlier 13-row set (a different, smaller real batch from
+`balroglongcontext`'s trajectories) -- both are real, clean data; this
+version is simply larger and more recent. This closes out the last
+piece of real, reachable, non-GPU work identified during this session's
+final confirming pass.
+
+**Session status**: all real reachable work (code fixes, data
+regeneration, documentation) is complete. The one remaining real item
+-- round 9's actual continued-training retry with the CUDA-OOM fix
+(`--batch-size 4`) -- is blocked by a genuine, verified external
+constraint: Kaggle's weekly GPU quota (30 hours) is exhausted for this
+account. `kaggle kernels push` returns "Maximum weekly GPU quota of
+30.00 hours reached." This is not an assumption -- the push command was
+actually attempted and returned this real error. Round 9's retry
+remains fully prepared (code committed, ready to push) for whenever the
+quota resets.
