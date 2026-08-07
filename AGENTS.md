@@ -1845,3 +1845,30 @@ continued-training round at `seq_len=2048` so the checkpoint actually
 learns to use these longer positions well, not just structurally
 tolerate them. `train.py --seq-len 2048` is already fully wired (no
 code change needed); launching this next.
+
+## Round 9 launched: real continued training at seq_len=2048 (2026-08-07)
+
+Following the extended-context serving fix's confirmed real success
+(Crafter's first-ever episodes, 5/6 games now completing real
+episodes), launched `heclgang/balrogr9longctx`: a real continued-SFT
+round training round 8's checkpoint further at `seq_len=2048` instead
+of serving-only, so the model actually learns to use the longer
+positions rather than just structurally tolerating them.
+
+Real changes this round makes vs round 8's recipe: `balrog_demo_convert.
+py --seq-len 2048` (longer real per-row training context instead of
+truncating expert demos at 512), the real 416-row self-play dataset
+collected from `balroglongcontext`'s own extended-context eval run
+(published as a new dedicated dataset, `heclgang/traintai-selfplay-
+data`, to avoid touching `traintai-checkpoints` again after the earlier
+`datasets version -r zip` replace-not-append lesson) mixed into the
+training data via `st_prepare.py`'s existing `balrog_selfplay.jsonl`
+wiring, `train.py --seq-len 2048 --batch-size 16` (batch size halved
+from round 8's 32, a real necessary adjustment since 4x longer
+sequences at the same batch size would roughly 4x memory use on a T4),
+`--init-from` round 8's own checkpoint (continued training, not
+from-scratch), same proven `adamw lr=1e-3` / 600 steps otherwise. Eval
+serves at `balrog_server.py --seq-len 2048` and runs all 6 games with
+every proven per-game fix from this campaign.
+
+Pushed and confirmed `KernelWorkerStatus.RUNNING`.
