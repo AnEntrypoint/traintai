@@ -2639,3 +2639,57 @@ between kernel runs, breaking an assumption an earlier fix made about
 what that image ships by default. Worth treating any future BALROG-eval
 regression on a previously-working fix as "image drift" as the first
 hypothesis, not a new code bug in this repo.
+
+## Round 11 real, complete 6-game eval result: pipeline fully fixed, self-play flywheel finally produces real data (2026-08-08)
+
+`heclgang/round11evalonly` completed with every fix holding: `nle build
+exit code: 0`, `real nle/minihack ok`, `real textworld ok`, and MiniHack
+Boxoban downloading cleanly (`boxoban download exit code: 0`, real
+`Boxoban-Medium`/`Boxoban-Hard` tasks appearing in the results for the
+first time -- 64 MiniHack episodes this round vs 48 in round 10, since
+Boxoban now actually loads).
+
+Real 6-game result (`summary.json`, 133 total episodes):
+
+```
+average_progress: 1.11%  (round 9: 2.62%, round 10: 1.46%)
+babyai:     6.67% (30 episodes)
+crafter:    0.00% (15 episodes)
+minihack:   0.00% (64 episodes, Boxoban now included)
+babaisai:   0.00% (8 episodes)
+textworld:  0.00% (8 episodes)
+nle:        0.00% (8 episodes)
+```
+
+Honest result: round 11 (self-play data via the fixed top-frac
+selector, init from round 9) still underperforms round 9's checkpoint
+on real eval. Round 9 remains the best checkpoint by real eval score
+across all three rounds tried so far.
+
+**The real, separately significant result this round:** the self-play
+data pipeline itself is now fully fixed and produced real, non-empty,
+multi-game data for the first time this campaign --
+`balrog_selfplay_convert.py`'s new rank-based selector kept **194 real
+rows across all 6 games** (babyai 2, crafter 1, babaisai 1, textworld
+160, minihack 20, nle 10) from this round's own 133 episodes, versus
+round 9's 2-row and round 10's 0-row outcomes under the old absolute
+threshold. This closes out the chicken-and-egg gap the reward-signal
+redesign was meant to fix -- round 12 can now train on a real,
+substantial round-11-generated self-play dataset instead of being
+starved of data regardless of checkpoint quality.
+
+**Standing conclusion after 3 rounds of the self-play-data lever
+(9/10/11):** self-play data volume/selector fixes alone have not yet
+moved real BALROG eval score in the right direction -- round 9's
+2.62% remains the high-water mark despite rounds 10/11 having more
+(round 10) or better-selected (round 11) self-play data. The eval
+score does not appear to be data-volume-bound at this scale; likely
+candidates for round 12's single lever, per this session's
+single-variable-change discipline: (a) the `balrog_demos.jsonl`
+expert-demonstration SFT lever (documented earlier this session,
+never yet tried as the sole changed variable), (b) increasing
+`BALROG_SELFPLAY_CAP`/`BALROG_DEMOS_CAP` mixture ratios rather than
+just fixing the selector, or (c) accepting that eval score may not be
+meaningfully movable by data-mixture changes alone at this 29M-param
+model scale, and revisiting model-capacity or architecture as the
+next research direction.
