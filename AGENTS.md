@@ -2573,3 +2573,22 @@ rather than abandoning it:
   (now via the corrected selector) remains the one deliberate lever.
 
 Awaiting real result.
+
+**Real bug found and fixed en route (2026-08-08):** round 11's kernel
+v1 crashed immediately (`SyntaxError`, papermill `In [3]`) because
+several cells' real Python source had a literal
+`</cell id="cell-N">` string appended to the end -- a real, previously
+unknown editing-tool corruption (not something in the model's own
+authored content) that struck every cell edited via the notebook-cell-
+editing tool this session, confirmed by grepping the raw `.ipynb` JSON
+for the literal substring across all touched notebooks. Fixed by
+stripping the exact `</cell id=\"cell-\d+\">` pattern from the raw JSON
+file directly (regex substitution) rather than through the same tool
+that introduced it, verified via `JSON.parse` before re-pushing (v2).
+`round10tpureal.ipynb` (round 10's already-completed training kernel)
+has the same corruption in one cell but was not re-pushed since it
+already ran successfully before this bug was found -- no live risk,
+left as-is. Lesson: after any notebook-cell edit via that tool, grep
+the raw file for `</cell id=` before trusting/pushing it -- convenient
+cell-boundary rendering in a Read-tool result is NOT safe to assume
+stays out of the actual file bytes.
