@@ -2189,3 +2189,41 @@ checkpoint.
 a substantial, genuine perplexity improvement; checkpoint safe and
 published. BALROG eval fix pushed as a separate, fast, non-accelerator
 kernel -- awaiting its real result.
+
+## Real fix for the balrog-nle CPU-image build failure (2026-08-08)
+
+Follow-up to the PATH-mutation fix above: even with hydra/textworld
+installing correctly, `balrog-nle==0.9.0` itself failed to build on the
+CPU-only Kaggle image used for the eval-only kernel, with a generic
+`error: subprocess-exited-with-error` that gave no real detail through
+the notebook's usual `tail -N`-truncated capture.
+
+Diagnosed via a genuinely narrow, isolated kernel
+(`heclgang/nlebuildtest`, no eval.py, just the apt install + one pip
+install, completing in ~1 minute per iteration) rather than guessing
+inside another multi-hour full-pipeline run:
+
+1. **v1/v2** (non-verbose, then `pip install -v` for full untruncated
+   output): real root cause found --
+   `/usr/local/bin/cmake` on this image is a broken Python pip-package
+   shim script (`from cmake import cmake`, but the Python `cmake` wheel
+   was never installed) that shadows the real apt-installed `cmake`
+   binary. `cmake --version` itself crashed with
+   `ModuleNotFoundError: No module named 'cmake'`.
+2. **v3**: `pip install cmake` fixed the shim (`cmake --version` then
+   printed a real `cmake version 3.31.10`) -- but the `balrog-nle` build
+   STILL failed with the identical `ModuleNotFoundError: No module
+   named 'cmake'`, this time from inside `build_ext`. Real second cause:
+   pip's build isolation runs the package's `setup.py build_ext` in a
+   fresh, separate virtualenv that does not inherit the outer
+   `dist-packages`, so the outer `cmake` install was invisible to it.
+3. **v4**: `pip install --no-build-isolation balrog-nle==0.9.0` (with
+   `setuptools`/`wheel`/`pybind11` pre-installed first, since
+   `--no-build-isolation` means the build no longer auto-installs its
+   own build-time deps) -- confirmed working: "Successfully built
+   balrog-nle gym", `nle_import_ok: True`.
+
+Both fixes rolled into `heclgang/round9evalonly` v3 (the real, full
+BALROG eval-only kernel) before running the full multi-hour pipeline
+again, per the discipline of verifying each real fix in isolation first
+rather than discovering a second failure only after another long run.
