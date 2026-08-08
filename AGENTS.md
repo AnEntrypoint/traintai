@@ -2271,3 +2271,42 @@ gap remains a real, separate, pre-existing limitation (BALROG's
 all-episodes-errored-silently-drops-the-env behavior, already
 documented earlier this session) -- not blocking, flagged for future
 investigation if pursued.
+
+## Real fix for TextWorld's 0-episode gap, first-ever 6-of-6-game BALROG coverage (2026-08-08)
+
+Root cause found by reading round 9's own `eval.log` directly:
+`TextWorldFactory.env_ids` ended up empty (`KeyError: "Task
+'coin_collector' not found. Available tasks are: []"`) because no
+pre-generated `*.ulx`/`*.z8` TextWorld game files existed on disk --
+unlike babyai/crafter, which generate levels procedurally at runtime,
+TextWorld requires real game files. BALROG's own README
+(`balrog/environments/textworld/README.md`) documents the fix:
+download and unzip a pregenerated-games archive from a Google Drive
+link into `BALROG/tw_games/`.
+
+Verified in isolation first (`heclgang/twgamestest`, no BALROG
+dependency install, no eval.py -- just the download + unzip + file
+check, completing in under 2 minutes): real `coin_collector/*.ulx`
+files land exactly where `TextWorldFactory` expects them. Rolled into
+`heclgang/round9evalonly` v5 (alongside the already-verified PATH and
+balrog-nle build fixes) for a real full re-run.
+
+Real result -- **the first-ever complete 6-of-6-game BALROG coverage
+this campaign has achieved**:
+
+```
+average_progress: 2.62%
+babyai:    13.33% (30 episodes)
+minihack:   2.08% (48 episodes)
+crafter:    0.30% (15 episodes)
+babaisai:   0.00% (8 episodes)
+nle:        0.00% (8 episodes)
+textworld:  0.00% (8 episodes, real episodes now running -- 0%
+            progression is real model performance, not a missing-data
+            gap anymore)
+```
+
+117 real episodes total (up from 109 without textworld). All three
+real bugs found this session (PATH mutation, balrog-nle build,
+TextWorld missing games) are now confirmed fixed end to end, not just
+in isolation.
