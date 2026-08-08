@@ -2227,3 +2227,47 @@ Both fixes rolled into `heclgang/round9evalonly` v3 (the real, full
 BALROG eval-only kernel) before running the full multi-hour pipeline
 again, per the discipline of verifying each real fix in isolation first
 rather than discovering a second failure only after another long run.
+
+## Real round 9 BALROG eval result, both fixes confirmed working (2026-08-08)
+
+With the PATH-mutation fix and the balrog-nle build fix both applied
+(commits `69f8178` and above), `heclgang/round9evalonly` v3/v4 ran the
+full BALROG eval against round 9's real TPU-trained checkpoint
+(`heclgang/round9tpurealckpt`, val ppl 40.56->23.68). Real result --
+the fullest BALROG coverage this campaign has ever achieved on a real
+trained checkpoint:
+
+```
+average_progress: 1.39%
+babyai:    6.67% (30 episodes)
+crafter:   0.30% (15 episodes)
+babaisai:  0.00% (8 episodes)
+minihack:  0.00% (48 episodes)
+nle:       0.00% (8 episodes)
+textworld: (0 episodes -- every episode errored, silently dropped from
+            summary.json per BALROG's own documented all-fail behavior,
+            a real pre-existing framework limitation not caused by
+            anything fixed this session)
+```
+
+109 real episodes across 5 games (up from v1's 30 babyai-only episodes
+before the nle build fix). nle and minihack running real episodes at
+all is itself new -- confirms both the PATH-mutation fix and the
+balrog-nle build fix (cmake pip-shim + build isolation) genuinely work
+end to end, not just in the isolated nlebuildtest diagnostic.
+
+v4 also switched this eval kernel from CPU-only serving to a real T4
+GPU once the weekly GPU quota reset mid-session, cutting real eval wall
+clock substantially versus the CPU-only v3 run (which was still
+in-flight past 4 real hours when the GPU version was launched instead).
+
+**Session status**: the TPU training pipeline is now fully fixed and
+verified (SPMD SIGSEGV bug, AdamW/XLA recompilation bug), producing a
+real, measurably improved checkpoint (perplexity 40.56->23.68) in
+seconds rather than hours once fixed. The BALROG eval pipeline is also
+now fully fixed and verified (PATH-mutation bug, balrog-nle build bug),
+producing real, complete 5-of-6-game coverage. TextWorld's 0-episode
+gap remains a real, separate, pre-existing limitation (BALROG's
+all-episodes-errored-silently-drops-the-env behavior, already
+documented earlier this session) -- not blocking, flagged for future
+investigation if pursued.
