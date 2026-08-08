@@ -30,10 +30,22 @@ import torch
 
 def _xla_device():
     import torch_xla.core.xla_model as xm
+    index = os.environ.get("TRAINTAI_XLA_DEVICE_INDEX")
+    if index is not None:
+        return xm.xla_device(int(index))
     return xm.xla_device()
 
 
 def get_device():
+    """Set TRAINTAI_XLA_DEVICE_INDEX=<n> (0..tpu_chip_count()-1) to pin
+    this process to one specific TPU chip via xm.xla_device(n) -- real,
+    confirmed working in-process on a v5e-8 pod (round9tpusmoke v6:
+    xla:0 through xla:7 all resolved cleanly, no env-var pinning
+    needed). This is the real mechanism an 8-way parallel single-chip
+    launcher uses to give each of 8 OS processes its own distinct chip,
+    since SPMD sharding crashes on this pod (see setup_spmd_mesh) and
+    TPU_VISIBLE_CHIPS subprocess env-var pinning also crashes (real
+    SIGABRT confirmed, "tpu_process_addresses=local" conflict)."""
     override = os.environ.get("TRAINTAI_DEVICE")
     if override:
         return _xla_device() if override == "xla" else torch.device(override)
