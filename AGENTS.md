@@ -2403,7 +2403,29 @@ pin, TextWorld pregenerated-games download) -- launched, awaiting
 round 10's real, complete 6-game eval coverage.
 
 Also published round 9's already-converted `balrog_demos.jsonl` as
-`heclgang/balrog-demos-cache` (see above) and launched
-`heclgang/tpuparallelsmoke` to verify `TRAINTAI_XLA_DEVICE_INDEX`
-chip-pinning on real hardware now that round 10 freed the one
-concurrent TPU session Kaggle allows -- both awaiting real results.
+`heclgang/balrog-demos-cache` (see above).
+
+## Real result: TRAINTAI_XLA_DEVICE_INDEX does NOT enable multi-process parallelism on this pod (2026-08-08)
+
+`heclgang/tpuparallelsmoke`'s 2-way chip probe (2 concurrent
+subprocesses, `TRAINTAI_XLA_DEVICE_INDEX=0` and `=1`) completed with a
+real, negative result: process 0 got `xla:0` cleanly, but process 1
+crashed with a real `SIGABRT` (returncode -6) inside
+`tpu_process_addresses="local"` initialization -- the same failure
+family as the earlier confirmed `TPU_VISIBLE_CHIPS` SIGABRT, not a new
+bug. Per this session's discipline of not proceeding past a failed
+narrow verification, the 8-way probe was correctly skipped.
+
+Conclusion: on this Kaggle v5e-8 pod's runtime, only ONE process can
+initialize a TPU chip at a time, regardless of which chip-selection
+mechanism is used (`TPU_VISIBLE_CHIPS` env var or
+`TRAINTAI_XLA_DEVICE_INDEX` + `xm.xla_device(n)`). `src/tpu_parallel_launcher.py`
+as designed (independent concurrent subprocesses) is NOT viable on
+this hardware/runtime combination -- true 8-way parallelism would
+require a single process driving all 8 chips (e.g. real SPMD), which
+is the exact mechanism already confirmed broken (real SIGSEGV, see
+above). This closes the "are the pod's 8 chips fully utilized" question:
+they cannot be, given both known chip-fanout mechanisms are broken on
+this pod, and single-chip training was never the bottleneck anyway
+(77-79s of a ~95min round). Not pursuing further parallelism work on
+this pod.
