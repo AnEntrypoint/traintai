@@ -2543,3 +2543,33 @@ addressing the real `ModuleNotFoundError` crash found in round 10's
 full log. Non-blocking if it fails (eval.py's own per-task retry
 already absorbs this exact crash without losing the rest of the run),
 so it runs best-effort rather than gating the pipeline on it.
+
+## Round 11 launched: init from round 9 (the better checkpoint), fixed self-play selector, cached demos (2026-08-08)
+
+`heclgang/round11tpureal` launched (TPU v5e-8). Per direct user
+decision, reverts to round 9's checkpoint as the base (it beat round
+10 on real eval, 2.62% vs 1.46%) rather than continuing the round 10
+chain, and applies a corrected version of the self-play-data lever
+rather than abandoning it:
+
+- **Self-play data**: round 9's own complete 6-game eval results
+  (117 episodes, the raw `eval.py` results directory, republished as
+  `heclgang/round9-eval-results-v5` since the original pre-converted
+  jsonl from that data no longer reflects the fixed selector)
+  re-converted with the new rank-based `--top-frac` selector instead
+  of the old `--min-return 0.0` absolute threshold -- this data
+  previously produced only 2 usable rows under the old filter.
+- **Expert-demo data**: copied directly from `heclgang/balrog-demos-cache`
+  (round 9's already-converted 20,000-row `balrog_demos.jsonl`) instead
+  of re-running the ~90-minute `balrog_demo_convert.py` conversion --
+  the first round to actually exercise this optimization.
+- **Eval fixes**: `cmake<4` pin and the MiniHack Boxoban level download
+  both applied to this round's OWN eval pass (not deferred to a
+  follow-up eval-only kernel), so round 11 should get real, complete
+  6-game coverage on the first try.
+- Every other config value (600 steps, batch_size=4, lr=1e-3, adamw,
+  seq_len=2048) held identical to rounds 9/10, per the established
+  single-variable-change discipline -- the self-play data source
+  (now via the corrected selector) remains the one deliberate lever.
+
+Awaiting real result.
