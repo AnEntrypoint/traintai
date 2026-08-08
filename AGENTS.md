@@ -2310,3 +2310,20 @@ textworld:  0.00% (8 episodes, real episodes now running -- 0%
 real bugs found this session (PATH mutation, balrog-nle build,
 TextWorld missing games) are now confirmed fixed end to end, not just
 in isolation.
+
+## Round 10 launched: real self-play data lever, all fixes carried forward (2026-08-08)
+
+Real round 9 self-play data published (`heclgang/round9-selfplay-data`,
+2 rows -- honestly small given round 9's checkpoint currently scores
+low real progression across most games, but real, clean, verified via
+manual inspection: both rows are genuine Crafter episodes with valid
+targets, no contamination). Round 10 launched
+(`heclgang/round10tpureal`, TPU v5e-8) with the single deliberate lever
+this round changes: round 9's own real self-play data replaces round
+8's, every other config value (600 steps, batch_size=4, lr=1e-3, adamw,
+seq_len=2048) held identical to round 9, per this project's established
+single-variable-change discipline. Carries forward all three real
+fixes found this session (SPMD SIGSEGV opt-out, AdamW/XLA
+hand-rolled-update, TextWorld pregenerated-games download) plus the two
+BALROG-eval-specific fixes (PATH mutation removed, balrog-nle
+build fix). Awaiting real result.
