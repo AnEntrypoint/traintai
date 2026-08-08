@@ -2327,3 +2327,35 @@ fixes found this session (SPMD SIGSEGV opt-out, AdamW/XLA
 hand-rolled-update, TextWorld pregenerated-games download) plus the two
 BALROG-eval-specific fixes (PATH mutation removed, balrog-nle
 build fix). Awaiting real result.
+
+## Real finding: balrog_demo_convert.py is the actual bottleneck, not TPU compute (2026-08-08)
+
+User asked directly why the CPU step in round 9/10 takes so long.
+Real answer, from round 9's own log: `balrog_demo_convert.py`
+(tokenizing + formatting 20,000 real BALROG expert-demo trajectory rows
+from a fixed 313MB `records.zip`) took **5658 seconds (~94 minutes)** --
+the dominant cost of the entire round, completely unrelated to
+TPU/GPU compute (real training itself is only ~77s). This also directly
+answers why SPMD 8-chip sharding would not meaningfully speed up a
+single round even if it worked: the bottleneck isn't TPU-bound at all.
+
+Real fix: since `records.zip`'s content is identical every round, this
+conversion's output is byte-identical round to round -- round 10
+recomputing it was pure redundant work. Pulled round 9's already-converted
+`balrog_demos.jsonl` (20,000 rows, 113MB, real) and published it as
+`heclgang/balrog-demos-cache`. Round 11+ should copy this cached file
+directly instead of re-downloading records.zip and re-running the
+conversion, eliminating ~90 of every round's ~95 total minutes. Only
+re-run the real conversion if the source records.zip changes or
+`--cap`/`--seq-len` changes.
+
+Separately: confirmed the real reason single-chip (not 8-chip SPMD)
+training is used -- SPMD crashes with a real SIGSEGV on this pod (an
+unresolved upstream torch_xla bug), and for this specific 29M-param
+model the training step itself was never the bottleneck anyway (77s of
+600 real steps). Built `src/tpu_parallel_launcher.py` +
+`TRAINTAI_XLA_DEVICE_INDEX` (device.py) for real parallel independent
+experiments across all 8 chips (not sharding one job) as the correct
+way to use the idle capacity -- not yet verified on real hardware
+(Kaggle allows only 1 concurrent TPU session, so round 10 must finish
+before this can be smoke-tested).
