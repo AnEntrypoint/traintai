@@ -2429,3 +2429,52 @@ they cannot be, given both known chip-fanout mechanisms are broken on
 this pod, and single-chip training was never the bottleneck anyway
 (77-79s of a ~95min round). Not pursuing further parallelism work on
 this pod.
+
+## Round 10 real, complete 6-game BALROG eval result (2026-08-08)
+
+`heclgang/round10evalonly` completed with all four real fixes holding
+(PATH mutation removed, nle build `--no-build-isolation`, `cmake<4`
+pin, TextWorld pregenerated-games download) -- confirmed live in the
+log: `balrog_server: serving ... across 2 device(s) (['cuda:0',
+'cuda:1']), max_batch=64 batch_window=15ms` (both real T4s detected
+and used, `--max-batch 64` applied independently per GPU via
+`resolve_devices()`'s one-`InferenceWorker`-per-device design --
+already the correct/maximal config for the `NvidiaTeslaT4` shape, no
+change needed), `nle build exit code: 0`, `real textworld ok`.
+
+Real, complete 6-game result (`summary.json`, 117 episodes total):
+
+```
+average_progress: 1.46%  (round 9's 6-game result was 2.62%)
+babyai:     6.67% (30 episodes)
+minihack:   2.08% (48 episodes)
+crafter:    0.00% (15 episodes)
+babaisai:   0.00% (8 episodes)
+textworld:  0.00% (8 episodes)
+nle:        0.00% (8 episodes)
+```
+
+Honest result: round 10's checkpoint (self-play-data-only lever, real
+training-loss improvement val ppl 23.68->21.05) scores WORSE on real
+BALROG eval than round 9's checkpoint (1.46% vs 2.62% average
+progression), despite the training loss genuinely improving. This is
+consistent with the standing lesson that training-loss improvement
+does not automatically transfer to eval-task competence at this model
+scale/data regime -- round 9's self-play data (only 2 real rows,
+manually inspected as clean) was too sparse a signal to move BALROG
+task competence, and may have specialized the model narrowly rather
+than generally. Round 10's self-play-data lever is REJECTED as a net
+eval improvement, same evidentiary standard as the r17/r19-r22
+GRPO-reward-shaping rejections above -- a real measured result, not a
+guess. Round 9's checkpoint (`heclgang/round9tpurealckpt`) remains the
+better of the two on real eval; do not promote round 10's checkpoint
+as the new best based on training loss alone.
+
+This closes out the full pending queue from this session: round 10
+trained and evaluated, cmake-version-drift bug found/fixed, TPU
+multi-process parallelism tested and confirmed non-viable on this pod,
+demos-cache published for future rounds. Next real lever (not yet
+attempted): denser/higher-quality self-play data (more than 2 rows) or
+returning to the `balrog_demos.jsonl` expert-demonstration SFT data
+lever (see the BALROG 10-round campaign sections above) instead of
+self-play data as round 11's single changed variable.
