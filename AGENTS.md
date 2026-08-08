@@ -2510,3 +2510,36 @@ read):
    volume needs either a less strict return filter (e.g. `>=` or a
    negative threshold) or a different reward signal entirely, not more
    episodes at the current filter setting.
+
+## Fixed: self-play reward signal redesigned to rank-based selection (2026-08-08)
+
+Per direct user instruction, `balrog_selfplay_convert.py`'s absolute
+`--min-return 0.0` threshold (which correctly, but unhelpfully,
+rejected all 117/117 of round 10's episodes) is replaced with
+per-task rank-based selection (`--top-frac`, default 0.25): sort each
+task's episodes by real `episode_return` (continuous, confirmed via
+direct read of round 10's per-episode JSON logs -- e.g. `-0.97`,
+`-1.0`, not a binary pass/fail), keep the top fraction, at least 1
+episode per task with any real episodes. `--min-return` remains
+available as an optional additional absolute floor for later once the
+checkpoint is strong enough that a meaningful fraction of episodes
+clear a genuine "real progress" bar. This breaks the chicken-and-egg
+gap where the self-play flywheel could never bootstrap at all while
+the checkpoint was weak (0-2 rows every round so far). All notebook
+callers still passing the old `--min-return 0.0` (round10-eval-only,
+round9-eval-only, round10-tpu-real, round9-tpu-real, balrog-allgames-eval,
+balrog-longcontext-eval, balrog-round9-longctx) need the flag removed
+to get the new default behavior -- `round10-eval-only`'s notebook is
+updated; the others are historical/already-run artifacts, not updated
+retroactively.
+
+Also fixed in the same pass: `round10-eval-only`'s notebook now
+best-effort downloads MiniHack's Boxoban level files
+(`minihack.scripts.download_boxoban_levels.download_boxoban_levels()`,
+confirmed via direct fetch of `balrog-ai/minihack`'s real source: pulls
+`deepmind/boxoban-levels`' `master.zip` into
+`<minihack-install>/dat/boxoban-levels-master/`) before `eval.py` runs,
+addressing the real `ModuleNotFoundError` crash found in round 10's
+full log. Non-blocking if it fails (eval.py's own per-task retry
+already absorbs this exact crash without losing the rest of the run),
+so it runs best-effort rather than gating the pipeline on it.
