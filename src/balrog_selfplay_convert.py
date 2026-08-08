@@ -22,9 +22,26 @@ consistent with the expert-demo rows already in the mixture.
 
 Output: data/npc/balrog_selfplay.jsonl, one {"text": ...} row per kept
 (prompt-prefix, next-action) step from a KEPT episode -- an entire
-episode is kept or dropped as a unit (per --min-return), not scored
-per-step, since a step's own local correctness isn't independently
-knowable from the CSV alone.
+episode is kept or dropped as a unit, not scored per-step, since a
+step's own local correctness isn't independently knowable from the CSV
+alone.
+
+Selection is rank-based per task (--top-frac), not an absolute return
+threshold. Real round 10 evidence: episode_return is continuous
+(BALROG's own per-step reward accumulation, e.g. -0.97, -1.0, not a
+binary pass/fail), but with a weak checkpoint every real episode across
+all 117 in round 10 scored <= 0.0 -- an absolute `> 0.0` "real progress"
+threshold correctly rejected all of them (total output rows: 0), which
+is mechanically honest but means the self-play flywheel cannot bootstrap
+at all until the checkpoint is already competent, a chicken-and-egg gap.
+Ranking keeps the RELATIVELY best episodes per task (highest
+episode_return, real signal even when every episode is a net failure)
+so the flywheel has something to reinforce from turn one, the same
+spirit as npc_action_forge.py's rejection sampling operating on relative
+not absolute correctness early in training. --min-return remains
+available as an optional absolute floor for callers who want the
+stricter "only genuine progress" gate back (e.g. once the checkpoint is
+strong enough that a meaningful fraction of episodes clear it).
 """
 
 import argparse
@@ -143,12 +160,23 @@ def main():
     ap.add_argument("--out", default=os.path.join(DATA, "npc", "balrog_selfplay.jsonl"))
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP)
     ap.add_argument("--seq-len", type=int, default=None)
-    ap.add_argument("--min-return", type=float, default=0.0,
-                     help="keep only episodes with episode_return strictly "
-                          "greater than this (real progression signal; "
-                          "BALROG's reward is 0 or negative on pure "
-                          "failure, so >0.0 is the honest bar for "
-                          "'this episode made real progress')")
+    ap.add_argument("--top-frac", type=float, default=0.25,
+                     help="keep the top fraction (by episode_return, "
+                          "highest first) of each task's episodes -- "
+                          "relative selection so the flywheel has real "
+                          "episodes to reinforce even when a weak "
+                          "checkpoint makes every episode a net failure "
+                          "(round 10: 117/117 episodes scored <=0.0). "
+                          "At least 1 episode per task with >=1 real "
+                          "episode is always kept.")
+    ap.add_argument("--min-return", type=float, default=None,
+                     help="optional absolute floor: additionally require "
+                          "episode_return strictly greater than this "
+                          "(BALROG's reward is 0 or negative on pure "
+                          "failure, so >0.0 is the honest 'this episode "
+                          "made real progress' bar). Combines with "
+                          "--top-frac (both must pass); unset by default "
+                          "so early-training rounds are not empty.")
     args = ap.parse_args()
 
     seq_len = args.seq_len if args.seq_len is not None else Config().seq_len
@@ -165,16 +193,27 @@ def main():
     with open(args.out, "w", encoding="utf-8") as f:
         for env_name in ENVS:
             pairs = find_episode_pairs(args.results_dir, env_name)
+            stats[env_name]["episodes"] = len(pairs)
+
+            by_task = {}
             for csv_path, json_path in pairs:
+                task = task_of(args.results_dir, env_name, json_path)
+                episode_return = load_episode_return(json_path)
+                by_task.setdefault(task, []).append((episode_return, csv_path, json_path))
+
+            selected = []
+            for task, episodes in by_task.items():
+                episodes.sort(key=lambda e: e[0], reverse=True)
+                n_keep = max(1, round(len(episodes) * args.top_frac))
+                selected.extend(episodes[:n_keep])
+
+            for episode_return, csv_path, json_path in selected:
                 if capped:
                     break
-                task = task_of(args.results_dir, env_name, json_path)
-                stats[env_name]["episodes"] += 1
-
-                episode_return = load_episode_return(json_path)
-                if episode_return <= args.min_return:
+                if args.min_return is not None and episode_return <= args.min_return:
                     continue
 
+                task = task_of(args.results_dir, env_name, json_path)
                 try:
                     steps = list(replay_csv_steps(csv_path, env_name, task))
                 except Exception as e:
@@ -204,7 +243,8 @@ def main():
     for env_name in ENVS:
         s = stats[env_name]
         print(f"{env_name:<12} {s['episodes']:>9} {s['kept_episodes']:>8} {s['kept_rows']:>10} {s['skipped_rows']:>13}")
-    print(f"\ntotal output rows: {total_rows} (cap={args.cap}, min_return={args.min_return}) -> {args.out}")
+    print(f"\ntotal output rows: {total_rows} "
+          f"(cap={args.cap}, top_frac={args.top_frac}, min_return={args.min_return}) -> {args.out}")
 
 
 if __name__ == "__main__":
