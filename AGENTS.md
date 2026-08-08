@@ -2478,3 +2478,35 @@ attempted): denser/higher-quality self-play data (more than 2 rows) or
 returning to the `balrog_demos.jsonl` expert-demonstration SFT data
 lever (see the BALROG 10-round campaign sections above) instead of
 self-play data as round 11's single changed variable.
+
+**Two more real findings from the full log** (`kaggle kernels output`'s
+`tail -300` truncation had hidden these from the earlier partial
+read):
+
+1. A MiniHack Boxoban task genuinely crashed on this run:
+   `ModuleNotFoundError: To use Boxoban environments, please download
+   maps using the minihack/scripts/download_boxoban_levels.py script`
+   (`boxohack.py`'s `load_boxoban_levels`) -- a real, previously-unseen
+   BALROG-side data-download gap (distinct from the TextWorld
+   pregenerated-games gap fixed earlier this session), not a bug in
+   this project's own pipeline. `eval.py`'s per-task retry/skip logic
+   absorbed the crash (the summary's MiniHack breakdown shows 6 tasks,
+   not 7 -- Boxoban silently produced zero episodes rather than
+   crashing the whole run). Not yet fixed; would need the same
+   `download_boxoban_levels.py` treatment as TextWorld's `tw-games.zip`
+   if MiniHack's Boxoban variant is ever wanted in the rotation.
+2. `balrog_selfplay.jsonl` conversion for THIS round's own episodes
+   produced **zero output rows** (`total output rows: 0`, every game
+   shows `kept_ep: 0` in the conversion table) -- `balrog_selfplay_convert.py --min-return
+   0.0` filters out any episode whose return does not exceed 0.0, and
+   this run's real per-episode rewards were overwhelmingly negative
+   (NLE/MiniHack: clustered -0.93 to -1.0) or exactly 0.0 (BabyAI/
+   Crafter/BabaIsAI/TextWorld -- 0.0 reward is filtered out by a
+   strict `> min_return` comparison, not `>=`). This means round 10's
+   own episodes generated NO usable self-play data for a hypothetical
+   round 11 -- consistent with, and a direct mechanical explanation
+   for, why round 9's self-play data was only ever 2 rows (the same
+   filter applied there too). Any future round wanting real self-play
+   volume needs either a less strict return filter (e.g. `>=` or a
+   negative threshold) or a different reward signal entirely, not more
+   episodes at the current filter setting.
