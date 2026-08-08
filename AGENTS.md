@@ -2592,3 +2592,50 @@ left as-is. Lesson: after any notebook-cell edit via that tool, grep
 the raw file for `</cell id=` before trusting/pushing it -- convenient
 cell-boundary rendering in a Read-tool result is NOT safe to assume
 stays out of the actual file bytes.
+
+## Round 11 real training result + new pkg_resources bug found and fixed (2026-08-08)
+
+`heclgang/round11tpureal` v2 (post notebook-corruption fix) completed.
+Real training result (`ple-r11tpureal-s0.json`):
+
+```
+final_val: 3.0508 (round 9: 3.16, round 10: 3.05)
+final_ppl: 21.13  (round 9: 23.68, round 10: 21.05)
+steps: 600, wall_seconds: 78.5
+```
+
+Nearly identical to round 10's training result -- the fixed self-play
+selector produced a real, non-empty dataset this time (unlike round
+9/10's 2-row and 0-row outcomes), but training-loss impact from that
+data was small at this volume. Checkpoint verified and published as
+`heclgang/round11tpurealckpt`.
+
+This kernel's own eval phase again only produced babyai's result
+(3.33%, 30 episodes), but for a NEW, different, previously-unseen real
+bug (confirmed by reading `nle_build.log` and `eval.log` directly, not
+assumed): `ModuleNotFoundError: No module named 'pkg_resources'`
+inside `nle/nethack/nethack.py:10`'s own `import pkg_resources` --
+this Kaggle image's `setuptools` (81.0.0) has dropped the `pkg_resources`
+module entirely (the nle build log's own `pkg_resources is deprecated`
+warnings were the tell). Every BALROG game that transitively imports
+`nle` (all except babyai, via `GymV21CompatibilityV0` -> `NLETimeLimit`
+-> `nle.env.base`) crashed on env creation. Verified fix narrowly first
+per this session's standing discipline: `heclgang/pkgresourcestest`
+confirmed `pip install "setuptools<81"` restores `pkg_resources` and
+lets `import nle, nle.nethack` succeed cleanly (`nle build exit code: 0`,
+`real nle/nethack import ok`). Applied to a new `heclgang/round11evalonly`
+kernel (checkpoint from `heclgang/round11tpurealckpt`, every fix this
+session carries forward: PATH mutation removed, nle build
+`--no-build-isolation`, `cmake<4` pin, NEW `setuptools<81` pin,
+TextWorld games download, MiniHack Boxoban download) -- launched,
+awaiting round 11's real, complete 6-game eval coverage.
+
+This is the fourth distinct real bug found in the nle/balrog-nle build
+chain this session alone (cmake pip-shim, build-isolation hiding it,
+cmake version drift, now pkg_resources removal) -- all from the same
+root cause class this session has now seen four times: an underlying
+Kaggle base image silently drifting its installed package versions
+between kernel runs, breaking an assumption an earlier fix made about
+what that image ships by default. Worth treating any future BALROG-eval
+regression on a previously-working fix as "image drift" as the first
+hypothesis, not a new code bug in this repo.
