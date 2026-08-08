@@ -2359,3 +2359,51 @@ experiments across all 8 chips (not sharding one job) as the correct
 way to use the idle capacity -- not yet verified on real hardware
 (Kaggle allows only 1 concurrent TPU session, so round 10 must finish
 before this can be smoke-tested).
+
+## Round 10 real result: further genuine improvement from the self-play-data lever (2026-08-08)
+
+`heclgang/round10tpureal` completed. Real training result (`ple-r10tpureal-s0.json`):
+
+```
+final_val: 3.0470 (round 9 was 3.16)
+final_ppl: 21.05  (round 9 was 23.68)
+steps: 600, wall_seconds: 78.9
+```
+
+A further genuine improvement purely from the single lever changed
+this round (round 9's own self-play data replacing round 8's, all
+other config held identical to round 9). Checkpoint verified (sha256
+`76e10cc3c94276f71a04ed4300bd0005ffcc9d39a4d32cf1c79ba1aeadd39a3d`) and
+published as `heclgang/round10tpurealckpt`.
+
+This kernel's own BALROG eval phase only produced babyai's real result
+(3.33%, 30 episodes) -- crafter/babaisai/textworld/minihack/nle all
+failed with `ModuleNotFoundError: No module named 'nle'`. Root cause
+(read directly from the pulled `nle_build.log`, not assumed): a NEW,
+different failure from the two nle-build bugs already fixed earlier
+this session -- a real CMake error, not a Python import error:
+
+```
+CMake Error at third_party/deboost.context/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 has been removed from CMake.
+```
+
+Root cause: the earlier fix's unpinned `pip install cmake` grabbed a
+newer cmake (>=4.0) on this later run, which dropped support for
+balrog-nle's bundled `third_party/deboost.context/CMakeLists.txt`'s
+old `cmake_minimum_required` policy. Fixed by pinning
+`pip install "cmake<4"` (matching the version confirmed working
+earlier, 3.31.10). Verified narrowly first, per this session's
+reduce-cost-of-failures discipline: `heclgang/nlebuildtest` v5,
+`EXIT CODE: 0`, `Successfully built balrog-nle gym`. Applied to a new
+`heclgang/round10evalonly` kernel (checkpoint from
+`heclgang/round10tpurealckpt`, all four real fixes carried forward:
+PATH mutation removed, nle build `--no-build-isolation`, `cmake<4`
+pin, TextWorld pregenerated-games download) -- launched, awaiting
+round 10's real, complete 6-game eval coverage.
+
+Also published round 9's already-converted `balrog_demos.jsonl` as
+`heclgang/balrog-demos-cache` (see above) and launched
+`heclgang/tpuparallelsmoke` to verify `TRAINTAI_XLA_DEVICE_INDEX`
+chip-pinning on real hardware now that round 10 freed the one
+concurrent TPU session Kaggle allows -- both awaiting real results.
