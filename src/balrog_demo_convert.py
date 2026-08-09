@@ -545,45 +545,67 @@ def main():
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
 
     stats = {env: {"episodes": 0, "kept": 0, "skipped": 0} for env in ENVS}
-    total_rows = 0
-    capped = False
 
-    with open(args.out, "w", encoding="utf-8") as f:
-        for env_name in ENVS:
-            npz_files = find_npz_files(args.records_dir, env_name)
-            if not npz_files:
+    # Real bug found this session (round 11's Crafter episodes emitted
+    # NetHack-vocabulary actions like "go west"/"open door" instead of
+    # Crafter's real "Move West"/"Do"): this file is consumed downstream
+    # by st_prepare.py's BALROG_DEMOS_CAP, which reads sequentially and
+    # stops at the cap -- with games written in a fixed ENVS order, the
+    # cap silently truncated after only 4 of 6 games, giving minihack and
+    # nle (19% and 65% of the full converted data) ZERO real demo rows in
+    # every round trained so far, directly explaining their persistent 0%
+    # BALROG progression. Fixed by writing games ROUND-ROBIN (one row from
+    # each game in turn) instead of sequential blocks, so any downstream
+    # prefix-truncating cap gets a genuinely balanced sample across all
+    # six games regardless of where it stops -- not just the true per-game
+    # cap this converter's own --cap knew about.
+    per_game_rows = {env: [] for env in ENVS}
+    for env_name in ENVS:
+        npz_files = find_npz_files(args.records_dir, env_name)
+        if not npz_files:
+            continue
+        for npz_path in npz_files:
+            task = task_of(args.records_dir, env_name, npz_path)
+            try:
+                steps = list(replay_steps(npz_path, env_name, task))
+            except Exception as e:
+                print(f"  [{env_name}] failed to replay {npz_path}: {e}", file=sys.stderr)
                 continue
-            for npz_path in npz_files:
-                if capped:
-                    break
-                task = task_of(args.records_dir, env_name, npz_path)
-                try:
-                    steps = list(replay_steps(npz_path, env_name, task))
-                except Exception as e:
-                    print(f"  [{env_name}] failed to replay {npz_path}: {e}", file=sys.stderr)
-                    continue
 
-                stats[env_name]["episodes"] += 1
-                for messages, action in steps:
-                    if total_rows >= args.cap:
-                        capped = True
-                        break
-                    text, kept = build_row(messages, action, tok, seq_len)
-                    if kept:
-                        f.write(json.dumps({"text": text}) + "\n")
-                        stats[env_name]["kept"] += 1
-                        total_rows += 1
-                    else:
-                        stats[env_name]["skipped"] += 1
-            if capped:
+            stats[env_name]["episodes"] += 1
+            for messages, action in steps:
+                text, kept = build_row(messages, action, tok, seq_len)
+                if kept:
+                    per_game_rows[env_name].append(text)
+                    stats[env_name]["kept"] += 1
+                else:
+                    stats[env_name]["skipped"] += 1
+
+    total_rows = 0
+    with open(args.out, "w", encoding="utf-8") as f:
+        indices = {env: 0 for env in ENVS}
+        while total_rows < args.cap:
+            wrote_any = False
+            for env_name in ENVS:
+                if total_rows >= args.cap:
+                    break
+                rows = per_game_rows[env_name]
+                i = indices[env_name]
+                if i >= len(rows):
+                    continue
+                f.write(json.dumps({"text": rows[i]}) + "\n")
+                indices[env_name] += 1
+                total_rows += 1
+                wrote_any = True
+            if not wrote_any:
                 break
 
     print()
-    print(f"{'game':<12} {'episodes':>9} {'kept':>8} {'skipped(too-long)':>18}")
+    print(f"{'game':<12} {'episodes':>9} {'available':>9} {'written':>8} {'skipped(too-long)':>18}")
     for env_name in ENVS:
         s = stats[env_name]
-        print(f"{env_name:<12} {s['episodes']:>9} {s['kept']:>8} {s['skipped']:>18}")
-    print(f"\ntotal output rows: {total_rows} (cap={args.cap}) -> {args.out}")
+        print(f"{env_name:<12} {s['episodes']:>9} {s['kept']:>9} {indices[env_name]:>8} {s['skipped']:>18}")
+    print(f"\ntotal output rows: {total_rows} (cap={args.cap}, round-robin across all games) -> {args.out}")
 
 
 if __name__ == "__main__":
