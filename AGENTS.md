@@ -2693,3 +2693,52 @@ just fixing the selector, or (c) accepting that eval score may not be
 meaningfully movable by data-mixture changes alone at this 29M-param
 model scale, and revisiting model-capacity or architecture as the
 next research direction.
+
+## Real root cause found: minihack/nle got ZERO demo rows in every round (2026-08-08/09)
+
+Per direct user instruction to find the actual next lever with real
+evidence rather than guessing, pulled round 11's individual per-episode
+JSON transcripts (not just the aggregate summary) and read the raw
+model outputs directly. **Crafter's `failed_candidates` log (162/162
+turns) shows the model consistently emitting NetHack/MiniHack-flavored
+dungeon commands** ("go west", "open door", "take one of Stone",
+"unlock the key") **instead of Crafter's real action vocabulary**
+("Move West", "Do", "Place Stone", "Make Wood Pickaxe" -- confirmed by
+reading `_CRAFTER_ACTION_DICT` in `balrog_demo_convert.py` directly).
+This is real, direct evidence of cross-game action-vocabulary bleed,
+not generic incompetence.
+
+Traced to the actual mechanism, not assumed: `balrog_demo_convert.py`
+writes `balrog_demos.jsonl` with games in a FIXED sequential order
+(`ENVS = ["babyai", "crafter", "babaisai", "textworld", "minihack",
+"nle"]`). `st_prepare.py`'s `BALROG_DEMOS_CAP=3000` then reads this
+file top-to-bottom via `read_jsonl` and `break`s once the cap is hit.
+Real per-game row counts recorded earlier this session (round 9's
+build log): babyai 356, crafter 1168, babaisai 725, textworld 833,
+minihack 3873, nle 13045 -- babyai+crafter+babaisai+textworld alone
+sum to **3082, already over the 3000 cap**. This means **minihack
+(19% of the real converted data) and nle (65%) received ZERO demo
+rows in the actual training mixture for every round trained so far
+(9, 10, 11)** -- a real, mechanically-precise, previously-undiagnosed
+bug, and a complete explanation for minihack/nle's persistent 0%
+BALROG progression across all three rounds independent of any
+self-play-data lever.
+
+**Fixed**: `balrog_demo_convert.py` now writes rows round-robin across
+all six games (one row from each game in turn) instead of sequential
+blocks, so any downstream prefix-truncating cap gets a genuinely
+balanced sample regardless of where it stops. This required
+regenerating `balrog_demos.jsonl` from the real `records.zip` (the
+~90-minute conversion, paid once) since the existing cached file has
+no per-row game tag and can't be reordered offline without re-parsing
+-- can't just patch the cache.
+
+Launched `heclgang/round12tpureal`: re-downloads and re-converts
+`records.zip` with the round-robin fix, trains from round 9's
+checkpoint (still the best real-eval score) with self-play data
+unchanged from round 11 (round 9's own episodes via the fixed
+rank-based selector), then republishes the corrected
+`balrog_demos.jsonl` as `heclgang/balrog-demos-cache` so round 13+ can
+go back to the fast cached-copy path. The round-robin fix is the one
+deliberate lever this round changes -- every other config value held
+identical to rounds 9/10/11. Awaiting real result.
