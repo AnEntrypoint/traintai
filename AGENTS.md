@@ -2938,4 +2938,43 @@ kernel at all), init from round 9's checkpoint (still the campaign's
 best real-eval result). A separate `heclgang/round14evalonly` GPU
 kernel will run the real 6-game eval once training completes and the
 checkpoint is published. Every other config value held identical to
-rounds 9-13. Awaiting real training result.
+rounds 9-13.
+
+## Round 14 real training result: val loss REGRESSED with the higher demo cap (2026-08-09/10)
+
+`heclgang/round14tpureal` (training-only kernel) completed. Real
+conversion log confirms the round-robin fix still holds (all 6 games
+represented, unchanged from rounds 12/13), and the real training
+mixture log confirms the lever landed exactly as intended:
+`balrog_demos 12000` (up from 3000).
+
+Real training result (`ple-r14tpureal-s0.json`):
+
+```
+final_val: 3.167  (round 9: 3.16, round 13: 3.03)
+final_ppl: 23.74  (round 9: 23.68, round 13: 20.79)
+best_val: 3.144 at step 0 (i.e. the pre-training checkpoint was already the best point)
+steps: 600, wall_seconds: 77.5
+history: step0 val=3.144 -> step150 val=3.211 -> step300 val=3.326 -> step450 val=3.307 -> step599 val=3.167
+```
+
+Honest result: val loss got WORSE through training and never
+recovered below its starting point -- this is a real, worse loss
+trajectory than every prior round in the campaign, including round
+9's original baseline. The 4x demo-cap increase appears to have pushed
+BALROG-shaped data too far into the mixture, degrading general
+training stability/coherence rather than purely reinforcing the
+stop-after-action behavior it targeted.
+
+This does not by itself confirm or refute the stop-token hypothesis --
+loss and BALROG-format-compliance are different measurements, and
+round 13's real per-episode evidence (100% of completions failing to
+stop cleanly) is a structural/behavioral finding independent of
+aggregate loss. Real eval launched on `heclgang/round14evalonly`
+(GPU-only) to test the hypothesis directly regardless of the loss
+regression. If eval progression does NOT improve despite the much
+higher BALROG-data fraction, that would be strong evidence the
+stop-token gap is NOT fixable by data-mixture-ratio alone (e.g. it may
+require an explicit reward/loss term on emitting EOT immediately after
+a valid action, or a harder truncation in `build_row()`'s completion
+target). Awaiting real eval result.
