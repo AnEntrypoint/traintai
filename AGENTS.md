@@ -2846,3 +2846,52 @@ and a long BALROG eval in the same kernel again -- always split, per
 this fix. The combined-kernel pattern used for rounds 9-13 was a
 latent time bomb that happened not to detonate until eval coverage
 grew large enough.
+
+## Round 13 real, complete 6-game eval result: round-robin fix confirmed working, real eval score DECLINED further (2026-08-09)
+
+`heclgang/round13evalonly` (GPU-only, split from training per the
+idle-kill fix above) completed cleanly -- no crashes, every fix held
+(`setuptools<81`, `cmake<4`, MiniHack Boxoban, round-robin demos).
+Real result (`summary.json`, 133 episodes):
+
+```
+average_progress: 0.82%  (round 9: 2.62%, round 10: 1.46%, round 11: 1.11%)
+babyai:     3.33% (30 episodes)
+minihack:   1.56% (64 episodes)
+babaisai:   0.00% (8 episodes)
+crafter:    0.00% (15 episodes)
+textworld:  0.00% (8 episodes)
+nle:        0.00% (8 episodes)
+```
+
+Honest, direct result: real BALROG eval score has now DECLINED across
+four consecutive rounds (9 -> 10 -> 11 -> 13, round 12 never
+completed eval), despite training-loss improving every single round
+and despite the round-robin demo-data fix being real and confirmed
+working exactly as designed (all six games genuinely represented in
+training data for the first time in round 13). Fixing the
+minihack/nle data-starvation bug did NOT translate into better real
+eval performance -- if anything the opposite, though babyai and
+minihack (the two games with any measurable progression this round)
+did fare relatively better than crafter/babaisai/textworld/nle,
+consistent with minihack now actually having real training exposure
+for the first time.
+
+**Standing conclusion, now spanning FOUR real measured rounds of
+data-mixture tuning (self-play selector, self-play volume, demo-data
+balance)**: none of these interventions have moved real BALROG eval
+score in the intended direction. Round 9's checkpoint (2.62%, self-play
+data was only 2 sparse rows, essentially untouched by any of this
+session's data-mixture work) remains the unambiguous best real result
+across the entire campaign. This is real, repeated evidence -- not a
+single noisy data point -- that further data-mixture tuning at this
+29M-param model scale, on this specific mixture recipe, has a real
+ceiling that's already been reached or overshot. The standing
+recommendation for round 14+ is to STOP iterating on
+self-play-data/demo-data mixture ratios as the primary lever and
+either (a) try the `balrog_demos.jsonl` cap/ratio itself as a
+deliberate variable (is 3000 too much/too little relative to the rest
+of the mixture, now that it's genuinely balanced across games), (b)
+revisit model capacity/architecture, or (c) accept round 9's
+checkpoint as the campaign's real ceiling for this training recipe and
+redirect effort elsewhere.
