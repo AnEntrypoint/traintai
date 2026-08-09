@@ -2895,3 +2895,47 @@ of the mixture, now that it's genuinely balanced across games), (b)
 revisit model capacity/architecture, or (c) accept round 9's
 checkpoint as the campaign's real ceiling for this training recipe and
 redirect effort elsewhere.
+
+## Real root cause found: model never learns to STOP after an action (2026-08-09)
+
+Per direct user instruction to find the actual next lever with
+evidence, pulled individual per-episode transcripts from round 13's
+real eval (not just aggregate summaries) and read the raw model
+output directly. **Every single failed-parse completion, across every
+game including babyai (the only nonzero-scoring game)**, has the exact
+same shape: a plausible action word followed by a hallucinated
+`\nuser: Observation:\n...` continuation -- e.g. `"north\nuser:
+Observation:\nYou cant hide"`. Confirmed directly from
+`balrog/agents/naive.py`'s real source: `NaiveAgent._extract_final_answer`
+filters non-alphabetic characters but does NOT truncate to a single
+word/line -- the ENTIRE completion up to the model's own EOT token is
+treated as the action. BabyAI's `action_frequency: {"go forward": 64}`
+with `num_steps: 64` initially looked like a real success, but is
+actually 64/64 fallback-default actions -- the environment's own
+default, not a genuine emitted action, confirming this same failure
+mode is universal, not game-specific.
+
+Confirmed via `st_prepare.py` (`eot` IS correctly appended after every
+document during binarization, `ids.append(eot)`) that the training
+FORMAT is correct -- every real BALROG demo/self-play row does end
+with a genuine EOT boundary in the training data. The gap is a
+LEARNING problem, not a format bug: at the old `BALROG_DEMOS_CAP=3000`,
+BALROG-shaped rows were only `3000/26135` (~11%) of round 13's real
+training mixture (per its own `st_prepare.py` log) -- too thin a
+signal against the rest of the mixture (predominantly NPC dialog data,
+which correctly rewards continued multi-turn generation) for the
+model to learn a strong "stop immediately after a short action"
+behavior specific to the BALROG prompt shape.
+
+**Fix and round 14's single deliberate lever**: `BALROG_DEMOS_CAP`
+raised 3000 -> 12000 in `st_prepare.py` (see the code-level record
+above), now that round-robin balancing (confirmed working in rounds
+12/13) means a larger cap is still a genuinely balanced sample across
+all six games rather than skewed toward whichever game has the most
+raw demo data. Launched `heclgang/round14tpureal` as a TRAINING-ONLY
+TPU kernel (per the idle-kill fix above -- no eval phase in this
+kernel at all), init from round 9's checkpoint (still the campaign's
+best real-eval result). A separate `heclgang/round14evalonly` GPU
+kernel will run the real 6-game eval once training completes and the
+checkpoint is published. Every other config value held identical to
+rounds 9-13. Awaiting real training result.
