@@ -2741,4 +2741,55 @@ rank-based selector), then republishes the corrected
 `balrog_demos.jsonl` as `heclgang/balrog-demos-cache` so round 13+ can
 go back to the fast cached-copy path. The round-robin fix is the one
 deliberate lever this round changes -- every other config value held
-identical to rounds 9/10/11. Awaiting real result.
+identical to rounds 9/10/11.
+
+## Round 12 real result: round-robin fix CONFIRMED WORKING, but eval regressed to the old pkg_resources bug (2026-08-09)
+
+`heclgang/round12tpureal` completed. Real conversion log confirms the
+round-robin fix works exactly as designed -- read directly, not
+assumed:
+
+```
+game          episodes available  written  skipped(too-long)
+babyai              25       356      356                  0
+crafter              5      1168     1168                  0
+babaisai            53       725      725                  0
+textworld           15       833      833                  0
+minihack            35      3873     3873                  0
+nle                  8     18396    13045                  0
+total output rows: 20000 (cap=20000, round-robin across all games)
+```
+
+All six games genuinely represented in the capped output -- the exact
+bug this fix targeted is closed. Real training also succeeded (val
+ppl 23.59 -> 21.01, matching rounds 9-11's pattern, `exit code: 0`).
+
+**However, eval regressed**: this kernel's notebook was copied from
+`round11-tpu-real` (the training notebook), which never received the
+`setuptools<81` pin -- that fix was only ever applied to the SEPARATE
+`round11-eval-only` notebook earlier this session, not the training
+notebook itself. Every non-babyai game failed with the identical
+`ModuleNotFoundError: No module named 'pkg_resources'` documented
+above (babyai: 6.67%, 30 episodes; everything else: eval.py crashed on
+env creation, 0 episodes). Self-play data collapsed back to 2 rows
+(only babyai completed) as a direct consequence.
+
+**Also found and fixed in the same pass**: a real, previously-latent
+`%cd` bug -- the checkpoint-copy cell ran with cwd still
+`/kaggle/working/BALROG` (set by an earlier cell, never `%cd`'d back
+to `/kaggle/working/traintai`), so its relative `runs/ple-r12tpureal-s0.pt`
+path resolved to the wrong directory and printed `NO CHECKPOINT FOUND
+to copy`. Confirmed cosmetic-only, not a real data-loss bug: the
+checkpoint file itself was still successfully recovered via `kaggle
+kernels output --file-pattern`, the actual external retrieval
+mechanism used every round regardless of what any in-kernel cell
+prints. This same latent bug exists unnoticed in every prior round's
+notebook (9/10/11) too, since none of them happened to trip a code
+path where it mattered until now.
+
+Fixed both bugs (added `setuptools<81` to the training notebook's own
+build-fix cell, added the missing `%cd` before the checkpoint-copy
+cell) and launched `heclgang/round13tpureal` as a clean re-run to get
+round 12's real result with a working eval phase -- the round-robin
+demo-data fix is the substantive lever, carried forward unchanged.
+Awaiting real result.
