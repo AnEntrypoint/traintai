@@ -2792,4 +2792,57 @@ build-fix cell, added the missing `%cd` before the checkpoint-copy
 cell) and launched `heclgang/round13tpureal` as a clean re-run to get
 round 12's real result with a working eval phase -- the round-robin
 demo-data fix is the substantive lever, carried forward unchanged.
-Awaiting real result.
+
+## Round 13 real result: training succeeded, eval CANCELED by TPU idle-timeout -- real root cause found (2026-08-09)
+
+`heclgang/round13tpureal`'s training succeeded cleanly: real
+conversion log again confirms the round-robin fix (babyai 356, crafter
+1168, babaisai 725, textworld 833, minihack 3873, nle 13045 -- all six
+games represented), training `val ppl 23.59 -> 20.79` in 112.6s
+(matching rounds 9-12's pattern). But the kernel was CANCELED
+mid-eval, not completed -- confirmed via `kaggle kernels status`
+showing `CANCEL_ACKNOWLEDGED`, and directly from Kaggle's own real
+cancellation message (surfaced by the user): `TPU stopped after being
+idle for 2h0m3s ... > 2h0m0s (please only use TPU VMs if you use the
+TPU). Exit code: 137`.
+
+**Real root cause**: `balrog_server.py` serves the checkpoint on CPU
+during eval (`TRAINTAI_DEVICE=cpu`, deliberately -- the TPU chip isn't
+needed for inference on this tiny model), so the TPU sits completely
+idle for the entire ~90+ minute eval phase after the ~2-minute
+training step. Kaggle enforces a real 2-hour idle-TPU kill switch that
+every prior round happened to dodge only because their eval phases
+finished before crossing that threshold -- round 13's genuinely longer
+eval (6 games including the newly-fixed, now-larger minihack coverage
+with real Boxoban episodes) pushed total idle time over the line for
+the first time.
+
+Real partial evidence recovered from the canceled kernel's output
+before cleanup (confirms every fix held, just didn't finish): babyai
+30/30 episodes, babaisai 8/8, textworld 8/8 complete; minihack
+partially complete with real non-crash episode data (confirmed
+Boxoban tasks running cleanly, no `pkg_resources` errors anywhere);
+crafter/nle still in progress when canceled (`eval.log` timestamps
+show NLE episodes actively running at 15:32-15:33, cancellation logged
+at the 2h0m3s idle mark from eval start ~13:43:48).
+
+**Fix**: per direct user instruction ("use online for training, do
+the rest locally"), split training and eval into separate kernels --
+training stays a TPU kernel (fast, ~2min, now genuinely done once it
+finishes rather than blocked on a slow eval phase after it), eval runs
+on a separate GPU-only kernel (`heclgang/round13evalonly`, no
+`enable_tpu`) that structurally cannot trigger the TPU idle-kill since
+it never allocates a TPU at all. This is the same split
+`round9evalonly`/`round11evalonly` already used, just now applied as
+the STANDARD pattern going forward rather than an eval-only follow-up
+run. Checkpoint recovery, sha256 verification, and dataset publishing
+(`heclgang/round13tpurealckpt`) all done locally via `kaggle kernels
+output`/`kaggle datasets create`, not inside any kernel. Launched
+`heclgang/round13evalonly` for round 13's real, complete 6-game eval
+coverage. Awaiting real result.
+
+**Standing lesson for all future rounds**: never combine TPU training
+and a long BALROG eval in the same kernel again -- always split, per
+this fix. The combined-kernel pattern used for rounds 9-13 was a
+latent time bomb that happened not to detonate until eval coverage
+grew large enough.
