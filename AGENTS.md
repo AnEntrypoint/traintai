@@ -3451,3 +3451,44 @@ have matched this round's real `-s1` checkpoint filename -- fixed before
 launch). Real parse-success rate from this run, compared against round
 15's 27.02% and round 18's 12.57%, will give the first real 2-seed
 spread measurement for this exact config.
+
+## Round 19 real eval result: two properly-seeded runs converge on ~12-13%, round 15's 27.02% is the outlier (2026-08-10)
+
+GPU-only eval kernel (`heclgang/round19evalonly`), full coverage, 133
+real episodes, all 6 games. Second real data point using the FIXED
+Batcher seeding (`--seed 1`, vs round 18's implicit `--seed 0` -- both
+now genuinely reproducible thanks to this round's earlier fix).
+
+**Real parse-success rate: 12.88%** (`1 - 14057/16136`) -- very close to
+round 18's 12.57% (both real, properly-seeded runs of the identical
+masking+cap=3000+no-selfplay config), and clearly below round 15's
+27.02%.
+
+**Real, corrected conclusion**: with two independent, properly-seeded
+runs of the exact same config now clustering tightly at 12.57% and
+12.88% (spread of only 0.31 percentage points), round 15's original
+27.02% -- produced under the UNSEEDED (buggy) `Batcher` -- looks like a
+genuine positive outlier from that specific unseeded random draw, not
+representative of what this config reliably produces. The stable,
+trustworthy real number for `BALROG_ROW_MASKING=1` + `BALROG_DEMOS_CAP=3000`
++ no self-play is **~12-13% parse-success**, not 27%. This still
+represents a real, large improvement over the pre-masking baseline
+(~5-7% flat across rounds 9/13/14) -- roughly 2x, not 4-5x as round 15's
+number suggested -- but the campaign should stop treating 27.02% as the
+target/baseline to beat. ~12-13% is the real, reproducible baseline
+going forward.
+
+This also means round 16 (cap=12000, 9.88%) and round 17 (+self-play,
+10.75%) were NOT as clearly regressive as they first looked when
+compared against round 15's outlier 27.02% -- both are within ~2-3
+percentage points of the now-established ~12-13% real baseline, i.e.
+plausibly noise-level differences rather than clear lever failures.
+Re-evaluating those levers with the NOW-FIXED seeding (multiple seeds
+per config) would be needed to say anything confident about them; the
+original single-run verdicts on rounds 16/17 should be treated as
+provisional, not settled.
+
+**Real, disciplined path forward**: use properly-seeded multi-run
+comparisons (minimum 2 seeds per config, as done here) before concluding
+any future lever helped or hurt, given the real ~0.3pp-tight but
+previously up-to-15pp-wide spread this investigation uncovered.
