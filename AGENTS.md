@@ -3303,3 +3303,43 @@ against round 15's 27.02% baseline) is the decisive metric.
 (Real Kaggle CLI OAuth session expired mid-round; required one manual
 re-auth retry from the user before the eval kernel could be pushed --
 noting here in case it recurs.)
+
+## Round 17 real eval result: self-play flywheel REGRESSES parse-success (2026-08-10)
+
+GPU-only eval kernel (`heclgang/round17evalonly`), full coverage, 133
+real episodes, all 6 games.
+
+**Real parse-success rate: 10.75%** (`1 - 13897/15571`), DOWN from round
+15's 27.02% (same cap=3000+masking config, but WITHOUT self-play data --
+round 15's `balrog_selfplay=0` was itself a bug, meaning round 15's
+27.02% result was accidentally produced with ZERO self-play rows in the
+mixture). This is a real, if counterintuitive, regression: adding 1060
+self-play rows generated from the model's own better (27%-parse-success)
+checkpoint made parse-success WORSE, not better, despite producing far
+more raw self-play rows than round 9's stale source (171).
+
+**Real hypothesis for why**: `balrog_selfplay_convert.py`'s rank-based
+`--top-frac 0.25` selection picks episodes that scored well on
+`episode_return`/progression, NOT episodes with clean stop-after-action
+formatting specifically -- an episode can have high in-game progress
+while still containing the exact hallucinated-continuation pattern
+masking is meant to suppress (the reward signal and the format-cleanliness
+signal are not the same target). Feeding 1060 such rows back into
+training, even with masking applied to their prompts, may reinforce
+whatever formatting patterns actually WERE present in round 15's
+completions -- including any residual bad habits -- more strongly than
+the demo data alone did, since self-play rows are the model's own
+voice while demos are external expert trajectories.
+
+**Conclusion, real evidence across rounds 15/16/17**: round 15's exact
+config -- `BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`,
+`balrog_selfplay=0` (no self-play data, however that happened) -- remains
+the best real result this campaign has produced (parse-success 27.02%).
+Both follow-up levers tried (raise demos cap under masking; add
+self-play from the better checkpoint) REGRESSED it. Round 18 should
+revert to round 15's exact configuration (masking on, cap=3000, self-play
+disabled/excluded) as the new stable baseline, rather than continuing to
+add self-play data blindly. If self-play is worth revisiting later, it
+should first be filtered/re-scored specifically for format-cleanliness
+(e.g. zero failed_candidates in the episode), not just top-frac by
+raw return/progression.
