@@ -3343,3 +3343,25 @@ add self-play data blindly. If self-play is worth revisiting later, it
 should first be filtered/re-scored specifically for format-cleanliness
 (e.g. zero failed_candidates in the episode), not just top-frac by
 raw return/progression.
+
+## Round 18 real training result: clean reproduction of round 15's exact config (2026-08-10)
+
+Deliberately reverted to round 15's exact configuration
+(`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play data source
+removed from `dataset_sources` entirely so it structurally cannot leak
+in) as a baseline reproduction check, before trying further levers --
+rounds 16 (cap increase) and 17 (self-play flywheel) both regressed
+round 15's real result, so confirming round 15's 27.02% is reproducible
+(not a training-seed fluke) is the right next step per this campaign's
+evidence discipline.
+
+Real result: identical mixture composition to round 15 (`balrog_demos
+3000 | balrog_selfplay 0`, `loss-masked 3000 BALROG rows, 5.30M prompt
+tokens excluded`, `0.7349 mean trainable-fraction` -- byte-for-byte
+matching round 15's numbers). `val=3.0454 ppl=21.02`, close to round
+15's `ppl=20.41` (small run-to-run noise, same order of magnitude).
+
+Checkpoint published as `heclgang/round18tpurealckpt`; eval kernel
+`heclgang/round18evalonly` launched to check whether real parse-success
+also reproduces near round 15's 27.02%, confirming the config (not a
+lucky training seed) is what produced the result.
