@@ -3270,3 +3270,36 @@ through the literal "assistant:" cue -- could experiment with masking
 one token earlier/later); (3) more training steps at the proven
 cap=3000+masking config (round 15 only ran the same 600-step budget as
 every prior round -- untested whether more steps compounds the gain).
+
+## Round 17 real training result: self-play flywheel from round 15's checkpoint (2026-08-10)
+
+Single lever vs. round 15 (the proven-best config: cap=3000 + masking):
+self-play data now sourced from round 15's OWN real eval run
+(`heclgang/round15-eval-results`, 133 real episodes at 27.02%
+parse-success) instead of round 9's stale eval run (~6% parse-success
+baseline). Required two real bugfixes found this round: (1) round 15's
+kernel globbed for a nonexistent `results.zip` for self-play data,
+silently producing `balrog_selfplay=0` -- fixed in round 16 but the
+fix's glob pattern (`*_naive_tinylm.zip` + unzip) was ALSO wrong for
+round 15's differently-structured dataset upload (Kaggle auto-extracts
+dataset zips server-side, so the mount is already flat
+`<env_name>/<task>/...`, no zip, no timestamped wrapper dir) -- fixed
+again (v2) by locating the results dir via a known-unique file
+(`babaisai_summary.json`) rather than guessing the mount path/name.
+
+Real result (v2, after the glob fix): `balrog_selfplay 1060` rows (vs
+round 9-sourced self-play's 171 in round 16) -- round 15's checkpoint
+produces far more valid, selectable episodes at `--top-frac 0.25`,
+direct evidence the masking fix improved real completion quality, not
+just the parse-success metric in isolation. `loss-masked 4060 BALROG
+rows, 7.39M prompt tokens excluded`, `0.6653 mean trainable-fraction`.
+`val=3.0503 ppl=21.12` -- close to round 15's 20.41 (slightly higher,
+within noise), much better than round 16's 23.74.
+
+Checkpoint published as `heclgang/round17tpurealckpt`; eval kernel
+`heclgang/round17evalonly` launched. Real parse-success rate (compared
+against round 15's 27.02% baseline) is the decisive metric.
+
+(Real Kaggle CLI OAuth session expired mid-round; required one manual
+re-auth retry from the user before the eval kernel could be pushed --
+noting here in case it recurs.)
