@@ -3407,3 +3407,21 @@ necessarily as clearly negative as first written up. Future lever
 comparisons should ideally average multiple training seeds per config
 before concluding a lever helped or hurt, given the real spread just
 measured (9.88% to 27.02% within nominally-identical configs).
+
+## Fixed real reproducibility bug: train.py's Batcher was unseeded (2026-08-10)
+
+Root cause of round 18's non-reproduction of round 15's result: `train.py`'s
+`Batcher` used `np.random.default_rng(None)` for the train split -- fully
+unseeded, so every training run sampled a different random sequence of
+2048-token windows from the 20-38M token mixture, even with `torch.manual_seed`
+fixed and `--seed` passed on the CLI. `--seed` only ever reached
+`torch.manual_seed` (model init/dropout), never the data sampler.
+
+Fixed: `Batcher.__init__` now accepts `seed=None` and uses it for the
+train split's `np.random.default_rng(seed)` (val remains fixed at 1234,
+unchanged); `main()` now passes `seed=args.seed` to both. This makes
+`--seed` genuinely control full run reproducibility going forward. Future
+lever comparisons can now use e.g. `--seed 0` vs `--seed 1` runs of the
+SAME config to measure real variance (as round 15 vs 18 revealed:
+27.02% vs 12.57% parse-success from a previously-unseeded "identical"
+config) BEFORE attributing a delta to a deliberate lever change.

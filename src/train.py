@@ -18,10 +18,20 @@ RUNS = os.path.join(HERE, "..", "runs")
 
 
 class Batcher:
-    def __init__(self, split, batch_size, seq_len, device, suffix=""):
+    def __init__(self, split, batch_size, seq_len, device, suffix="", seed=None):
         self.data = np.memmap(os.path.join(DATA, f"{split}{suffix}.bin"), dtype=np.uint16, mode="r")
         self.bs, self.sl, self.device = batch_size, seq_len, device
-        self.rng = np.random.default_rng(1234 if split == "val" else None)
+        # val always uses the fixed seed 1234 so every arm/round is scored
+        # against identical val batches. train defaults to a caller-supplied
+        # seed (args.seed) so a run is fully reproducible end-to-end --
+        # previously this was np.random.default_rng(None), i.e. unseeded,
+        # which was found (round 18, 2026-08-10) to produce real
+        # non-reproducibility: an exact config re-run of round 15 (same
+        # mixture, same val ppl within noise) scored 12.57% real
+        # parse-success vs round 15's original 27.02% -- a spread entirely
+        # attributable to this unseeded train-batch sampling, not the
+        # config itself. Fixing this makes future lever comparisons trustworthy.
+        self.rng = np.random.default_rng(1234 if split == "val" else seed)
         # Optional loss-mask sidecar (see st_prepare.py's BALROG_ROW_MASKING):
         # same length as self.data, 1=trainable/0=masked. Absent for older
         # prebuilt .bin files, in which case every position is trainable
@@ -174,8 +184,8 @@ def main():
         )
     muon_bufs = [torch.zeros_like(p) for p in decay] if args.optimizer == "muon" else []
 
-    train_b = Batcher("train", args.batch_size, args.seq_len, device, suffix)
-    val_b = Batcher("val", args.batch_size, args.seq_len, device, suffix)
+    train_b = Batcher("train", args.batch_size, args.seq_len, device, suffix, seed=args.seed)
+    val_b = Batcher("val", args.batch_size, args.seq_len, device, suffix, seed=args.seed)
 
     name = f"{args.arm}{'-' + args.tag if args.tag else ''}-s{args.seed}"
     history, best = [], float("inf")
