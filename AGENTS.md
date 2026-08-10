@@ -3079,3 +3079,61 @@ real lever (harder completion-target truncation, or reward shaping)
 should be measured against parse-success rate as the PRIMARY metric,
 with `average_progress` only as a downstream sanity check once
 parse-success is genuinely nonzero.
+
+## BALROG-row prompt-loss-masking implemented (2026-08-10)
+
+Root cause found via LOCAL code inspection only (no Kaggle time spent,
+per instruction to exhaust local verification first): `train.py`'s
+`Batcher` samples random 2048-token windows from a flat concatenated
+token stream with zero document-boundary or prompt/completion
+awareness -- standard continued-pretraining-style training, not SFT.
+`model.py`'s loss already supports `ignore_index=-1` for masked
+positions, but nothing ever fed it real masked targets. This means
+every BALROG demo/self-play row's 200-2000+ token Observation/
+instruction prompt got EQUAL gradient weight to its actual 1-3 token
+completion (the action) -- explaining why round 14's 4x
+`BALROG_DEMOS_CAP` increase (3000->12000) produced zero measurable
+parse-success improvement despite quadrupling row count: token-level
+loss weight barely moved.
+
+**Fix implemented** (scoped to BALROG rows only, per explicit user
+choice -- every other mixture source stays fully unmasked/unchanged):
+- `st_prepare.py`: `BALROG_DEMOS_CAP` reverted 12000 -> 3000 (round 14's
+  increase is a refuted lever, real per-episode evidence showed no
+  improvement plus a val-loss regression). New `BALROG_ROW_MASKING` env
+  flag (default on). During the main encode loop, for each BALROG demo/
+  self-play row, locate the last `"assistant:"` cue in the row's raw
+  text, re-encode the prompt-up-to-and-including-that-cue substring to
+  get its exact token length, and mark those leading tokens `0` (masked)
+  in a new parallel `mask` array (1=trainable). EOT tokens stay
+  trainable (they ARE the stop signal). TinyStories tokens and every
+  non-BALROG source stay fully unmasked (`1`). Output as new
+  `train_{tag}.mask.bin` / `val_{tag}.mask.bin` sidecars (uint8),
+  split at the identical `n_val` boundary as the token `.bin` files so
+  they stay index-aligned.
+- `train.py`: `Batcher` now optionally loads a `{split}{suffix}.mask.bin`
+  memmap if present (older prebuilt `.bin` files without a sidecar train
+  exactly as before -- no mask, nothing forced to -1). When present, the
+  same sampled window indices are used to slice the mask array in
+  lockstep with `y`, and masked positions are set to `-1` before the
+  batch is returned. `model.py` needed NO changes -- its existing
+  `ignore_index=-1` cross-entropy call was already correct.
+
+**Local verification** (before any Kaggle time spent, using
+`.venv/Scripts/python.exe` against real cached
+`balrog-demos-cache-upload-v2/balrog_demos.jsonl` rows): ran the exact
+masking logic (assistant-cue split + re-encode) against 5 random real
+rows. In every case the unmasked tail tokens decoded EXACTLY to the
+row's real action (` turn left`, ` west`, ` south`, ` east`, ` west`),
+with prompt_tokens correctly capturing everything up to and including
+`assistant:` (e.g. total=2048, prompt=2047, completion=1 for the
+single-word-action minihack/nle rows; total=1279, prompt=1277,
+completion=2 for a two-word babyai row). Confirms the boundary
+detection is correct before spending any TPU time on it.
+
+**Next**: launch round 15 as a training-only TPU kernel (standard
+split pattern) with `BALROG_ROW_MASKING=1` (default) and
+`BALROG_DEMOS_CAP=3000` (reverted, single-lever isolation vs. the
+already-refuted cap-increase), then a separate GPU-only eval kernel.
+Primary metric: real parse-success rate (not `average_progress`), per
+the round-9-noise reframe above.

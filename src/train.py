@@ -22,11 +22,20 @@ class Batcher:
         self.data = np.memmap(os.path.join(DATA, f"{split}{suffix}.bin"), dtype=np.uint16, mode="r")
         self.bs, self.sl, self.device = batch_size, seq_len, device
         self.rng = np.random.default_rng(1234 if split == "val" else None)
+        # Optional loss-mask sidecar (see st_prepare.py's BALROG_ROW_MASKING):
+        # same length as self.data, 1=trainable/0=masked. Absent for older
+        # prebuilt .bin files, in which case every position is trainable
+        # (identical behavior to before masking existed).
+        mask_path = os.path.join(DATA, f"{split}{suffix}.mask.bin")
+        self.mask = np.memmap(mask_path, dtype=np.uint8, mode="r") if os.path.exists(mask_path) else None
 
     def __call__(self):
         ix = self.rng.integers(0, len(self.data) - self.sl - 1, self.bs)
         x = np.stack([self.data[i : i + self.sl] for i in ix]).astype(np.int64)
         y = np.stack([self.data[i + 1 : i + 1 + self.sl] for i in ix]).astype(np.int64)
+        if self.mask is not None:
+            m = np.stack([self.mask[i + 1 : i + 1 + self.sl] for i in ix]).astype(bool)
+            y[~m] = -1
         return torch.from_numpy(x).to(self.device), torch.from_numpy(y).to(self.device)
 
 

@@ -80,7 +80,8 @@ KAGGLE_FANTASY_CAP = 3000
 KAGGLE_WIKI_CAP = 900  # sparse interleave target ~5% of a typical round's mixture, per Distribution Smoothing literature
 KAGGLE_GAMEARENA_CAP = 900  # same sparse ~5% role, combined across all 13 Kaggle Game Arena datasets -- see kaggle_gamearena_convert.py
 KAGGLE_WEREWOLF_CAP = 2000  # Werewolf's own larger, separately-capped allocation, IN ADDITION TO its share of kaggle_gamearena.jsonl's combined pool
-BALROG_DEMOS_CAP = int(os.environ.get("BALROG_DEMOS_CAP", 12000))  # balrog_demo_convert.py output: real BALROG expert-demo trajectories re-rendered as "Observation: ... assistant: <action>" SFT rows, so the model sees this prompt shape at least once before a BALROG eval round instead of only ever being evaluated on it untrained. Overridable via env var for lever-isolation sweeps that vary the demo-data mixture ratio without editing this file between runs. Raised from 3000 (2026-08-09): round 13's real per-episode transcripts showed the model reliably picking near-correct action vocabulary but NEVER stopping generation after the action -- every single action across every game was wrapped in a hallucinated "\nuser: Observation:\n..." continuation that broke BALROG's exact-match parser (real evidence: MiniHack/BabyAI failed_candidates logs, 100% of raw completions malformed). At the old cap, BALROG-shaped rows were only ~3000/26135 (~11%) of the training mixture -- too small a fraction for the model to learn a strong "stop immediately after a short action" habit specific to this prompt shape, since the rest of the mixture (NPC dialog data) rewards continued multi-turn generation. Round-robin balancing (fixed the same day) means a larger cap is now a genuinely balanced sample across all six games, not skewed toward whichever game happens to have the most raw demo data.
+BALROG_DEMOS_CAP = int(os.environ.get("BALROG_DEMOS_CAP", 3000))  # balrog_demo_convert.py output: real BALROG expert-demo trajectories re-rendered as "Observation: ... assistant: <action>" SFT rows, so the model sees this prompt shape at least once before a BALROG eval round instead of only ever being evaluated on it untrained. Overridable via env var for lever-isolation sweeps that vary the demo-data mixture ratio without editing this file between runs. Reverted to 3000 from a round-14 attempt at 12000 (2026-08-10): real per-episode parse-success-rate measurement (see below) showed raising the row-count cap 3000->12000 moved parse-success from ~6% to ~5%, i.e. NO improvement (within noise, if not slightly worse) -- refuting the "just add more demo rows" hypothesis with real evidence across rounds 9/13/14. Root cause instead traced to train.py's Batcher/model.py loss having NO prompt masking at all (ignore_index=-1 support exists but is never used) -- every token, including each BALROG row's huge Observation/instruction prompt (200-2000+ tokens), gets equal gradient weight against the 1-3 actual completion tokens that matter for the stop-after-action behavior. Real fix is per-row loss masking (BALROG_ROW_MASKING below), not a bigger cap.
+BALROG_ROW_MASKING = os.environ.get("BALROG_ROW_MASKING", "1") == "1"  # mask the PROMPT portion of every BALROG demo/self-play row's loss (ignore_index=-1 via a parallel mask.bin), so gradient concentrates on the completion tokens (the action) instead of being diluted across each row's huge Observation/instruction prompt. The real, measured-necessary fix (2026-08-10) after BALROG_DEMOS_CAP alone was shown to not move real parse-success rate at all across rounds 9/13/14 (~5-7%, flat). Disable via env var to isolate/compare against the unmasked baseline.
 BALROG_DEMOS_ONLY = os.environ.get("BALROG_DEMOS_ONLY", "") == "1"  # when set, skip every other source and TinyStories entirely -- an isolation-test mixture of pure BALROG demo data, for measuring whether diluting demo data with the rest of the mixture is itself a lever
 BALROG_SELFPLAY_CAP = int(os.environ.get("BALROG_SELFPLAY_CAP", 1500))  # balrog_selfplay_convert.py output: our OWN checkpoint's real self-play rollouts, filtered to episode_return>0 -- a rejection-sampling flywheel on top of the expert-demo bootstrap, same self-distillation-limit convention as FORGE_CAP/ACTION_FORGE_CAP
 TINYSTORIES_TOKENS = 4_000_000
@@ -291,19 +292,26 @@ def main():
                 if n_balrog_selfplay >= BALROG_SELFPLAY_CAP:
                     break
 
+    balrog_row_flags = []  # parallel to texts: True for BALROG demo/self-play rows, used to build the loss mask below
+
     if BALROG_DEMOS_ONLY:
         # Isolation-test mixture: pure BALROG demo data, nothing else,
         # no TinyStories -- measures whether the rest of the mixture
         # dilutes/interferes with format-learning from demo data alone,
         # a real lever candidate this can't distinguish from without it.
         texts = list(balrog_demos) + list(balrog_selfplay)
+        balrog_row_flags = [True] * len(texts)
         tmpl = []
         print(f"BALROG_DEMOS_ONLY=1 -- balrog_demos {n_balrog_demos} | balrog_selfplay {n_balrog_selfplay} | total {len(texts)}")
     else:
+        balrog_row_flags = [False] * len(texts)
         texts.extend(balrog_demos)
+        balrog_row_flags.extend([True] * len(balrog_demos))
         texts.extend(balrog_selfplay)
+        balrog_row_flags.extend([True] * len(balrog_selfplay))
         tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
         texts.extend(tmpl[:TEMPLATE_CAP])
+        balrog_row_flags.extend([False] * min(len(tmpl), TEMPLATE_CAP))
         print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
               f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
               f"kaggle_fantasy {n_kaggle_fantasy} | kaggle_wiki {n_kaggle_wiki} | "
@@ -311,24 +319,62 @@ def main():
               f"balrog_demos {n_balrog_demos} | balrog_selfplay {n_balrog_selfplay} | "
               f"template {min(len(tmpl), TEMPLATE_CAP)} | total {len(texts)}")
 
+    # Real fix (2026-08-10): BALROG rows end "...\nassistant: <action>" (see
+    # balrog_demo_convert.py's build_row()) -- everything up to and including
+    # "assistant:" is the PROMPT (huge Observation/instruction text, 200-2000+
+    # tokens); only the action itself (1-3 tokens) is the actual completion
+    # signal that matters for the model's stop-after-action behavior.
+    # Unmasked training gives the prompt equal gradient weight to the
+    # completion, diluting the exact signal BALROG_DEMOS_CAP alone was
+    # measured (rounds 9/13/14, real parse-success rate flat ~5-7%) not to
+    # fix. Mask the prompt span (ignore_index=-1 in model.py's loss) for
+    # BALROG rows only -- every other source's rows stay fully unmasked,
+    # unchanged from every prior round's training regime.
+    n_masked_rows = 0
+    n_masked_tokens = 0
     ids = []
-    for i, enc in enumerate(encode(texts)):
+    mask = []  # parallel to ids: 1 = trainable, 0 = masked out of loss
+    ASSISTANT_CUE = "assistant:"
+    for i, (text, enc, is_balrog) in enumerate(zip(texts, encode(texts), balrog_row_flags)):
+        row_mask = [1] * len(enc)
+        if BALROG_ROW_MASKING and is_balrog:
+            cue_pos = text.rfind(ASSISTANT_CUE)
+            if cue_pos != -1:
+                prompt_text = text[: cue_pos + len(ASSISTANT_CUE)]
+                prompt_len = len(tok.encode(prompt_text).ids)
+                prompt_len = min(prompt_len, len(enc))  # defensive: never mask past the row's own token count
+                if prompt_len > 0:
+                    row_mask[:prompt_len] = [0] * prompt_len
+                    n_masked_rows += 1
+                    n_masked_tokens += prompt_len
         ids.extend(enc)
+        mask.extend(row_mask)
         ids.append(eot)
+        mask.append(1)  # EOT itself stays trainable -- it IS the stop signal
         if (i + 1) % 10000 == 0:
             print(f"  {i + 1}/{len(texts)}, {len(ids) / 1e6:.1f}M tokens", flush=True)
 
+    if BALROG_ROW_MASKING:
+        print(f"loss-masked {n_masked_rows} BALROG rows, {n_masked_tokens / 1e6:.2f}M prompt tokens excluded from loss")
+
     if not BALROG_DEMOS_ONLY:
         ts = np.memmap(os.path.join(DATA, "train_v32768.bin"), dtype=np.uint16, mode="r")
-        ids.extend(ts[:TINYSTORIES_TOKENS].tolist())
+        ts_ids = ts[:TINYSTORIES_TOKENS].tolist()
+        ids.extend(ts_ids)
+        mask.extend([1] * len(ts_ids))
         print(f"added {TINYSTORIES_TOKENS / 1e6:.1f}M TinyStories tokens; total {len(ids) / 1e6:.1f}M")
 
     arr = np.array(ids, dtype=np.uint16)
+    mask_arr = np.array(mask, dtype=np.uint8)
+    assert len(arr) == len(mask_arr), f"token/mask length mismatch: {len(arr)} vs {len(mask_arr)}"
     n_val = max(1, int(len(arr) * 0.005))
     out_tag = os.environ.get("ST_PREPARE_OUT_TAG", "npc")  # override to build multiple named mixture variants side by side (e.g. lever-sweep runs), without each overwriting the shared default train_npc.bin/val_npc.bin
     arr[:-n_val].tofile(os.path.join(DATA, f"train_{out_tag}.bin"))
     arr[-n_val:].tofile(os.path.join(DATA, f"val_{out_tag}.bin"))
-    print(f"train {len(arr) - n_val:,} / val {n_val:,} -> train_{out_tag}.bin/val_{out_tag}.bin")
+    mask_arr[:-n_val].tofile(os.path.join(DATA, f"train_{out_tag}.mask.bin"))
+    mask_arr[-n_val:].tofile(os.path.join(DATA, f"val_{out_tag}.mask.bin"))
+    print(f"train {len(arr) - n_val:,} / val {n_val:,} -> train_{out_tag}.bin/val_{out_tag}.bin "
+          f"(+ .mask.bin sidecar, {mask_arr.mean():.4f} mean trainable-fraction)")
 
 
 if __name__ == "__main__":
