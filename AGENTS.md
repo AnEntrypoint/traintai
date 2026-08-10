@@ -3026,3 +3026,56 @@ higher BALROG ratio could have had -- a cleaner isolation would keep
 mixture) while testing (a) or (b) as the ONLY changed variable, per
 the single-variable-change discipline, rather than stacking a
 demo-ratio change on top of an already-confirmed-bad ratio.
+
+## Real finding: round 9's "best" 2.62% is very likely noise, not a real capability edge (2026-08-10)
+
+Per direct user question ("why was round 9 so good, how do we run with
+that trend"), traced the real source of round 9's score instead of
+just comparing aggregate numbers across rounds. Pulled round 9's own
+raw per-episode JSONs (already cached locally from earlier this
+session) for the SAME MiniHack MazeWalk-15x15 task and the same babyai
+goto task used as comparison samples in rounds 13/14's analysis above.
+
+**Round 9 has the IDENTICAL stop-token failure as every later round.**
+Its `MazeWalk-15x15_run_00.json`: `progression: 0.0`,
+`action_frequency: {"north": 100}` (100% environment-default
+fallback), and `failed_candidates` shows the exact same
+`"<action>\nuser: Observation:\n..."` hallucinated-continuation
+pattern found in rounds 13/14. Its `babyai/goto_run_00.json`:
+`progression: 0.0`, same failure mode. **This confirms the stop-token
+gap is not a round-9-specific-fixed problem re-broken later -- it has
+been present in EVERY round this entire campaign, round 9 included.**
+
+Searched round 9's full local episode cache for every real
+nonzero-progression episode: found exactly ONE,
+`MazeWalk-15x15_run_06.json` -- `episode_return: 1.0`, `progression:
+1.0`, `end_reason: 2` (real environment success), but **only 4 real
+steps**, `action_frequency: {"north": 4}` -- again 100% environment
+default-fallback actions (the model's own completions in this episode
+also failed to parse, per its own `failed_candidates`). This specific
+MazeWalk seed/layout happened to be solvable by walking north four
+times in a row from the start position -- a property of the maze
+layout the fallback direction exploited by chance, not a demonstration
+of real model competence or task understanding.
+
+**Real, honest conclusion**: round 9's 2.62% edge over rounds 10-14
+(1.11-1.46%) is very likely NOT evidence of a genuinely better
+checkpoint -- it is noise from which specific BALROG task seeds
+happened to be walkable by the environment's own default fallback
+action, given that literally every round's model output fails to
+parse as a valid action at a ~100% rate across every game sampled so
+far. With ~117-133 episodes per round and single-digit real successes
+possible from fallback-action luck alone, a 1-2 percentage-point
+spread between rounds is within the noise floor this measurement can
+produce, not a signal to optimize against. **Chasing "beat round 9's
+2.62%" as a target is chasing noise.** The real, load-bearing metric
+this campaign should optimize is `failed_candidates` rate /
+completion-parse-success rate directly (currently ~100% failure
+across every round and every game sampled) -- not `average_progress`,
+which cannot move meaningfully until parse-success rate does. Round
+14's real per-episode evidence already established that
+`BALROG_DEMOS_CAP` ratio alone does not fix parse-success; the next
+real lever (harder completion-target truncation, or reward shaping)
+should be measured against parse-success rate as the PRIMARY metric,
+with `average_progress` only as a downstream sanity check once
+parse-success is genuinely nonzero.
