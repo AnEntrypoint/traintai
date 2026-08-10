@@ -2977,4 +2977,52 @@ higher BALROG-data fraction, that would be strong evidence the
 stop-token gap is NOT fixable by data-mixture-ratio alone (e.g. it may
 require an explicit reward/loss term on emitting EOT immediately after
 a valid action, or a harder truncation in `build_row()`'s completion
-target). Awaiting real eval result.
+target).
+
+## Round 14 real eval result: stop-token hypothesis REFUTED by real evidence -- ratio alone does not fix it (2026-08-10)
+
+`heclgang/round14evalonly` (GPU-only) completed. Real result
+(`summary.json`, 133 episodes):
+
+```
+average_progress: 1.11%  (round 9: 2.62%, round 10: 1.46%, round 11: 1.11%, round 13: 0.82%)
+babyai:     6.67% (30 episodes)
+minihack:   0.00% (64 episodes)
+babaisai:   0.00% (8 episodes)
+crafter:    0.00% (15 episodes)
+textworld:  0.00% (8 episodes)
+nle:        0.00% (8 episodes)
+```
+
+Improved over round 13's 0.82% but still below round 9's 2.62% and
+merely ties round 11's 1.11%. **Pulled a real MiniHack episode
+transcript to test the actual mechanism, not just the aggregate
+score**: the failure mode is IDENTICAL to round 13's, byte-for-byte in
+spirit -- 100% of the 100 raw completions in the sampled episode still
+hallucinate a fake `\nuser: Observation:\n...` continuation after the
+action word, e.g. `"go west\nuser: Observation:\n Lant"`,
+`"unlock: north and west\nuser: Observation:\nmessage"`. Quadrupling
+`BALROG_DEMOS_CAP` from 3000 to 12000 (an ~11% -> ~46% share of the
+mixture) produced ZERO observable change in this specific failure
+mode.
+
+**Real, confirmed conclusion**: the stop-after-action learning gap is
+NOT fixable by data-mixture ratio alone, at any ratio tested so far
+(11% or 46% of the mixture). This is a real, repeated result (2 of 2
+rounds tested) -- not fixable by "more of the same lever." Per the
+hypothesis already stated when this experiment was designed, the next
+real candidates are: (a) an explicit stronger stop-signal in
+`build_row()`'s completion target itself (e.g. a distinct delimiter,
+or hard-truncating the completion to just the action tokens with
+nothing else ever following in ANY training row, not just BALROG
+rows), (b) a reward/loss term specifically penalizing continuation
+past a valid action (would require GRPO-style reward shaping, a lever
+class already flagged elsewhere in this file as historically prone to
+overshoot -- proceed with the same measured-safe-optimum discipline),
+or (c) the confound that round 14's real val-loss REGRESSION (worse
+than every prior round) may itself be masking whatever benefit the
+higher BALROG ratio could have had -- a cleaner isolation would keep
+`BALROG_DEMOS_CAP` moderate (e.g. revert toward round 9-13's original
+mixture) while testing (a) or (b) as the ONLY changed variable, per
+the single-variable-change discipline, rather than stacking a
+demo-ratio change on top of an already-confirmed-bad ratio.
