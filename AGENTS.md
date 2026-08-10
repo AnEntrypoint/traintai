@@ -3563,3 +3563,21 @@ If it plateaus near round 20's 31.20% or regresses, round 20's result
 was likely a one-round ceiling (self-play from THAT SPECIFIC lucky/good
 checkpoint helped, but the effect doesn't keep compounding indefinitely
 from feeding the model its own outputs).
+
+## Round 21 real training result: flywheel round 2, seed=2 (2026-08-11)
+
+Self-play data sourced from round 20's own real eval run (31.20%
+parse-success). Real result: `balrog_selfplay 1161` rows (up slightly
+from round 20's 1060, consistent with round 20's higher parse-success
+producing more selectable episodes at `--top-frac 0.25`). `loss-masked
+4161 BALROG rows, 7.34M prompt tokens excluded`, `0.6667 mean
+trainable-fraction`. `val=3.0577 ppl=21.28` -- similar range to rounds
+19/20.
+
+Checkpoint published as `heclgang/round21tpurealckpt`; eval kernel
+`heclgang/round21evalonly` launched (another real notebook bug found and
+fixed: the eval kernel's checkpoint glob was copy-pasted with `-s1`
+hardcoded from round 20's template, needed `-s2` for this round's real
+checkpoint suffix -- fixed before launch, same class of bug as round
+19's). Real parse-success from this run tests whether the self-play
+flywheel compounds past round 20's 31.20%.
