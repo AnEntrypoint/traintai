@@ -3194,3 +3194,35 @@ contributes noise), or increasing real BALROG training signal now that
 each token of it actually reaches the loss function undiluted (previously
 refuted at cap=12000 WITHOUT masking; worth reconsidering WITH masking
 now that the token-level dilution problem is fixed).
+
+## Round 16 real training result (2026-08-10)
+
+Single lever vs. round 15: `BALROG_DEMOS_CAP` raised 3000 -> 12000 with
+`BALROG_ROW_MASKING=1` unchanged (retesting the cap increase now that
+masking removes the token-dilution confound that sank round 14's
+identical cap value tested WITHOUT masking). Also fixed a real bug found
+in round 15's log: the self-play glob looked for a nonexistent
+`results.zip`, silently producing `balrog_selfplay=0` every round;
+fixed to glob the actual extracted `heclgang/round9-eval-results-v5`
+layout -- confirmed working this round (`balrog_selfplay 171`, was 0).
+
+Real result: `loss-masked 12171 BALROG rows, 23.57M prompt tokens
+excluded`, but `mean trainable-fraction` dropped to 0.3844 (was 0.7349
+at cap=3000) -- at cap=12000, BALROG rows are now 34% of the total
+35,306-row mixture, so even with prompt-masking fixing the
+gradient-weight-per-BALROG-row problem, the RAW TOKEN BUDGET spent on
+BALROG prompts (masked, contributing zero loss) now crowds out the rest
+of the mixture more than at cap=3000. `val=3.1672 ppl=23.74` -- back up
+to round 14's regressed level, worse than round 15's `ppl=20.41`. This
+is a real, different failure mode than round 14's (masking IS working,
+per the trainable-fraction accounting), but the net effect on val loss
+is still negative at this cap value.
+
+Checkpoint published as `heclgang/round16tpurealckpt`; eval kernel
+`heclgang/round16evalonly` launched. Real parse-success rate (not val
+ppl) is still the decisive metric -- val ppl regressions have not always
+tracked parse-success in this campaign (round 15's ppl improvement DID
+track a real parse-success jump, but round 14's ppl regression happened
+under the old unmasked regime, a different mechanism). Awaiting eval
+result before concluding whether cap=12000 is net positive or negative
+under masking.
