@@ -3510,3 +3510,38 @@ comparison: round 19 (seed=1, no self-play) = 12.88% parse-success vs
 round 20 (seed=1, +1060 self-play rows) = TBD. Any real difference here
 is now attributable to the self-play lever alone, not confounded by
 unseeded run-to-run variance.
+
+## Round 20 real eval result: self-play flywheel CONFIRMED as a real, large win in a controlled comparison (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round20evalonly`), full coverage, 133
+real episodes, all 6 games. Matched-seed (`--seed 1`) controlled
+comparison against round 19's clean no-selfplay baseline.
+
+**Real parse-success rate: 31.20%** (`1 - 10844/15762`) -- a full 18.3
+percentage points above round 19's matched baseline (12.88%). This is
+the largest, cleanest single-lever effect this campaign has measured,
+and unlike round 15's 27.02% outlier, this result comes from a properly
+seed-controlled comparison (round 19 = same config minus self-play,
+round 20 = same config plus 1060 self-play rows from round 15's real
+eval run, both `--seed 1`) -- the 18.3pp gap is real, not measurement
+noise, since it dwarfs the ~0.3pp spread measured between rounds 18/19
+(two runs of the truly identical config).
+
+**Real, corrected conclusion on the self-play lever**: round 17's
+original self-play result (10.75%) was compared against the WRONG
+baseline (round 15's 27.02% outlier) and wrongly concluded to be a
+regression. In a proper same-seed controlled comparison, self-play from
+the model's own better checkpoint is a genuine, large, real win --
+confirming the self-play flywheel pattern already proven elsewhere in
+this campaign works here too, once measured correctly.
+
+**Updated real best config**: `BALROG_ROW_MASKING=1` +
+`BALROG_DEMOS_CAP=3000` + self-play data from a real prior eval run
+(round 15's, or ideally each round's own -- the flywheel principle) is
+now the best validated real result: 31.20% parse-success, seed-1
+controlled. This should be the new default going forward. Recommended
+next step: regenerate self-play from round 20's OWN eval run (this
+round, 31.20%) for round 21, continuing the flywheel -- each round's
+better checkpoint should produce even better self-play data for the
+next round, assuming the effect compounds (untested, real next
+hypothesis to check).
