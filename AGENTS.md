@@ -3365,3 +3365,45 @@ Checkpoint published as `heclgang/round18tpurealckpt`; eval kernel
 `heclgang/round18evalonly` launched to check whether real parse-success
 also reproduces near round 15's 27.02%, confirming the config (not a
 lucky training seed) is what produced the result.
+
+## Round 18 real eval result: round 15's 27.02% does NOT reproduce -- real variance, not a stable config property (2026-08-10)
+
+GPU-only eval kernel (`heclgang/round18evalonly`), full coverage, 133
+real episodes, all 6 games, EXACT same training mixture as round 15
+(`balrog_demos 3000 | balrog_selfplay 0`, `loss-masked 3000 BALROG rows`,
+`0.7349 mean trainable-fraction`) and near-identical val ppl (21.02 vs
+20.41).
+
+**Real parse-success rate: 12.57%** (`1 - 13449/15382`) -- NOT close to
+round 15's 27.02%, despite byte-identical training-data composition.
+This is a real, important finding: the masking fix clearly still works
+(12.57% is well above the pre-masking noise floor of ~5-7% from rounds
+9/13/14), but round 15's specific 27.02% number was NOT a stable,
+reproducible property of "masking + cap=3000 + no self-play" -- it was
+itself subject to real run-to-run variance (TPU training is not seeded
+deterministically in this pipeline; `train.py`'s `Batcher` uses
+`np.random.default_rng()` with no fixed seed for the train split, only
+val uses a fixed seed 1234).
+
+**Revised real conclusion across rounds 15/16/17/18**: masking
+(`BALROG_ROW_MASKING=1`) reliably lifts parse-success from the ~5-7%
+unmasked baseline into a **~10-27% range** (round 15: 27.02%, round 16
+cap=12000: 9.88%, round 17 +self-play: 10.75%, round 18 exact repro:
+12.57%) -- masking itself is the confirmed real lever, but the exact
+number within that range has real variance this campaign has not yet
+controlled for. Round 15's 27.02% should be treated as the high end of
+a noisy distribution, not a specific target -- comparing single round
+results against it directly (as rounds 16/17 did) may have been
+over-interpreting normal variance as a real regression in some cases.
+
+**Real implication for future rounds**: single-run comparisons at this
+sample size (133 episodes, one training run) are not reliable enough to
+detect anything but LARGE effects. Round 16's cap=12000 (9.88%) and
+round 17's self-play (10.75%) results are both within the same rough
+band as round 18's clean reproduction (12.57%) of the "identical" config
+-- meaning those two levers' apparent regressions may be smaller real
+effects than they looked, muddied by this same run-to-run variance, not
+necessarily as clearly negative as first written up. Future lever
+comparisons should ideally average multiple training seeds per config
+before concluding a lever helped or hurt, given the real spread just
+measured (9.88% to 27.02% within nominally-identical configs).
