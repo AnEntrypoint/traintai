@@ -3492,3 +3492,21 @@ provisional, not settled.
 comparisons (minimum 2 seeds per config, as done here) before concluding
 any future lever helped or hurt, given the real ~0.3pp-tight but
 previously up-to-15pp-wide spread this investigation uncovered.
+
+## Round 20 real training result: self-play retest, matched seed vs round 19 (2026-08-10)
+
+Clean, apples-to-apples retest of the self-play flywheel lever: `--seed
+1` (matching round 19's clean no-selfplay baseline exactly), self-play
+data from round 15's real eval run (same source round 17 used).
+Real result: `balrog_selfplay 1060` rows (matches round 17's count,
+confirming reproducible self-play conversion), `loss-masked 4060 BALROG
+rows, 7.39M prompt tokens excluded`, `0.6653 mean trainable-fraction`.
+`val=3.0382 ppl=20.87` -- close to round 19's 20.27 (small, expected
+noise).
+
+Checkpoint published as `heclgang/round20tpurealckpt`; eval kernel
+`heclgang/round20evalonly` launched. This is now a genuinely controlled
+comparison: round 19 (seed=1, no self-play) = 12.88% parse-success vs
+round 20 (seed=1, +1060 self-play rows) = TBD. Any real difference here
+is now attributable to the self-play lever alone, not confounded by
+unseeded run-to-run variance.
