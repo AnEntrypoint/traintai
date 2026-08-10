@@ -3425,3 +3425,29 @@ lever comparisons can now use e.g. `--seed 0` vs `--seed 1` runs of the
 SAME config to measure real variance (as round 15 vs 18 revealed:
 27.02% vs 12.57% parse-success from a previously-unseeded "identical"
 config) BEFORE attributing a delta to a deliberate lever change.
+
+## Round 19 real training result: seed=1 replicate, reproducibility fix confirmed working (2026-08-10)
+
+Second independent data point on rounds 15/18's exact config (masking
+on, cap=3000, no self-play), this time with `--seed 1` explicitly (vs
+rounds 15/18's implicit `--seed 0`), using the just-fixed `Batcher`
+seeding. Real confirmation the fix works: checkpoint filename is
+`ple-r19tpureal-s1.pt` (vs prior rounds' `-s0`), and the training log
+shows the real invocation included `--seed 1`.
+
+Real result: identical mixture composition to rounds 15/18
+(`balrog_demos 3000 | balrog_selfplay 0`, `loss-masked 3000 BALROG
+rows`, `0.7349 mean trainable-fraction`). `val=3.0093 ppl=20.27` -- in
+the same tight range as round 15 (20.41) and round 18 (21.02), all
+within normal run-to-run noise on val loss specifically (val batches are
+always seed-1234-fixed, so val ppl varies only from the different
+training trajectory, not eval randomness).
+
+Checkpoint published as `heclgang/round19tpurealckpt`; eval kernel
+`heclgang/round19evalonly` launched (a second, real Kaggle notebook bug
+found and fixed while building it: the eval kernel's checkpoint glob
+was copy-pasted with the old `-s0` suffix hardcoded, which would not
+have matched this round's real `-s1` checkpoint filename -- fixed before
+launch). Real parse-success rate from this run, compared against round
+15's 27.02% and round 18's 12.57%, will give the first real 2-seed
+spread measurement for this exact config.
