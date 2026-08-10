@@ -3160,3 +3160,37 @@ Checkpoint published as `heclgang/round15tpurealckpt`; GPU-only eval
 kernel `heclgang/round15evalonly` launched against it. Primary metric to
 check: real parse-success rate (not `average_progress`), per the
 round-9-noise reframe.
+
+## Round 15 real eval result: masking is a confirmed real fix (2026-08-10)
+
+GPU-only eval kernel (`heclgang/round15evalonly`) against the masked
+checkpoint (`heclgang/round15tpurealckpt`), all 6 games, 133 real
+episodes (full coverage, matching prior rounds' sample size).
+
+**Real parse-success rate: 27.02%** (`1 - 11386/15601` failed
+completions), vs. round 9's 6.02%, round 13's 6.61%, round 14's 5.02% --
+all flat/noisy under every prior lever tried (demo-cap increase,
+round-robin balancing alone). This is a ~4-5x jump, the first movement
+in this metric across the entire campaign that is clearly outside the
+noise floor established by rounds 9/13/14.
+
+avg_progression=1.50%, avg_return=-0.251 -- still low in absolute terms
+(most episodes still fail overall), but the underlying mechanism this
+campaign identified as broken (model never learning to stop generating
+after the action, breaking BALROG's exact-match parser) is now
+measurably, substantially fixed. This confirms the root-cause diagnosis
+from local code inspection (train.py's Batcher never using model.py's
+existing ignore_index=-1 loss-masking support) was correct, and that
+prompt/completion loss masking -- not data-mixture ratio -- was the real
+lever this whole time.
+
+**Conclusion**: `BALROG_ROW_MASKING=1` should be the permanent default
+going forward (already is, via st_prepare.py's env-var default). Next
+round should build on this baseline rather than re-testing masking
+on/off -- the real next lever candidates are: extending masking's
+prompt/completion split refinement (currently masks up to and including
+literal "assistant:", could be refined per-token if the cue itself
+contributes noise), or increasing real BALROG training signal now that
+each token of it actually reaches the loss function undiluted (previously
+refuted at cap=12000 WITHOUT masking; worth reconsidering WITH masking
+now that the token-level dilution problem is fixed).
