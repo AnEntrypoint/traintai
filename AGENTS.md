@@ -3545,3 +3545,21 @@ round, 31.20%) for round 21, continuing the flywheel -- each round's
 better checkpoint should produce even better self-play data for the
 next round, assuming the effect compounds (untested, real next
 hypothesis to check).
+
+## Round 21 launched: self-play flywheel compounding test (2026-08-11)
+
+Testing whether round 20's confirmed real win (self-play from a better
+checkpoint -> 31.20% parse-success, up from 12.88% baseline) compounds
+across rounds. Self-play data now sourced from round 20's OWN real eval
+run (`heclgang/round20-eval-results`) instead of round 15's. `--seed 2`
+(fresh, avoiding reuse of seed 1 already used for the round19/20
+comparison pair). Config otherwise identical: `BALROG_ROW_MASKING=1`,
+`BALROG_DEMOS_CAP=3000`.
+
+If real parse-success continues climbing (e.g. into the 35-45% range),
+this confirms a genuine, repeatable, compounding self-play flywheel --
+the strongest lever this campaign has found, worth running every round.
+If it plateaus near round 20's 31.20% or regresses, round 20's result
+was likely a one-round ceiling (self-play from THAT SPECIFIC lucky/good
+checkpoint helped, but the effect doesn't keep compounding indefinitely
+from feeding the model its own outputs).
