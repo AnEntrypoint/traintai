@@ -3226,3 +3226,47 @@ track a real parse-success jump, but round 14's ppl regression happened
 under the old unmasked regime, a different mechanism). Awaiting eval
 result before concluding whether cap=12000 is net positive or negative
 under masking.
+
+## Round 16 real eval result: cap=12000 net REGRESSES parse-success even with masking (2026-08-10)
+
+GPU-only eval kernel (`heclgang/round16evalonly`), full coverage, 133
+real episodes, all 6 games.
+
+**Real parse-success rate: 9.88%** (`1 - 14444/16027`), DOWN from round
+15's 27.02% (cap=3000, same masking). Still above the pre-masking noise
+floor (~5-7%, rounds 9/13/14) but a clear regression from round 15's
+result, not an improvement. This refutes the "retest cap-increase now
+that masking exists" hypothesis: even with masking working correctly
+(confirmed via the trainable-fraction accounting in round 16's training
+log), a demos cap large enough to dominate the mixture (12000/35306 =
+34% of rows) crowds out the rest of the mixture's real training signal
+via raw token budget, not gradient dilution -- a different mechanism
+than the one masking fixes, but with the same practical effect: net
+regression.
+
+Interesting secondary signal: avg_progression rose to 6.02% (vs round
+15's 1.50%) and avg_return improved to -0.3866 (vs -0.2510... actually
+WORSE) -- mixed/noisy on the secondary metrics, parse-success rate
+remains the clean, decisive signal per this campaign's metric discipline.
+
+**Conclusion, real evidence across rounds 14/15/16**: `BALROG_DEMOS_CAP`
+should stay at **3000** -- both the unmasked (round 14) and masked
+(round 16) attempts to raise it regressed results relative to their
+respective cap=3000 baselines. `BALROG_ROW_MASKING=1` + `BALROG_DEMOS_CAP=3000`
+(round 15's exact configuration) is the best real result this campaign
+has produced: parse-success 27.02%, the new baseline to beat. Reverting
+`BALROG_DEMOS_CAP` back to 3000 as the permanent default (already is,
+via st_prepare.py's own default value -- only the env-var override
+needs to stop being used going forward).
+
+Next real lever candidates, now that the round-15 config is the proven
+best: (1) more self-play data at higher quality (round 15/16 both only
+had ~171 real self-play rows from round 9's cached eval -- could
+regenerate self-play from round 15's own now-27%-parse-success
+checkpoint for a flywheel effect, matching this project's established
+"self-play flywheel" pattern used successfully elsewhere in the
+campaign); (2) refine the masking boundary itself (currently masks
+through the literal "assistant:" cue -- could experiment with masking
+one token earlier/later); (3) more training steps at the proven
+cap=3000+masking config (round 15 only ran the same 600-step budget as
+every prior round -- untested whether more steps compounds the gain).
