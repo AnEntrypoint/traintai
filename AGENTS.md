@@ -3137,3 +3137,26 @@ split pattern) with `BALROG_ROW_MASKING=1` (default) and
 already-refuted cap-increase), then a separate GPU-only eval kernel.
 Primary metric: real parse-success rate (not `average_progress`), per
 the round-9-noise reframe above.
+
+## Round 15 real training result (2026-08-10)
+
+Training-only TPU kernel (`heclgang/round15tpureal`), single lever vs.
+round 13/9 baseline: `BALROG_ROW_MASKING=1` (masked prompt loss for
+BALROG rows), `BALROG_DEMOS_CAP=3000` (reverted from round 14's refuted
+12000). Real log confirms masking actually ran:
+`loss-masked 3000 BALROG rows, 5.30M prompt tokens excluded from loss`,
+`0.7349 mean trainable-fraction` across the full 19.9M-token mixture.
+
+Real result: `val=3.0159 ppl=20.41` at step 599 -- better than round 14's
+`ppl=23.74` (worse than baseline) and also better than round 9's
+original `ppl` at the same step count. `heclgang/round9-eval-results-v5`
+self-play source was not found under `/kaggle/input` this run despite
+being listed in dataset_sources (`balrog_selfplay 0` in the mixture log)
+-- a real gap to investigate before trusting future round-to-round
+self-play-driven deltas, but does not confound this round's isolated
+masking lever since demos alone were still masked and trained on.
+
+Checkpoint published as `heclgang/round15tpurealckpt`; GPU-only eval
+kernel `heclgang/round15evalonly` launched against it. Primary metric to
+check: real parse-success rate (not `average_progress`), per the
+round-9-noise reframe.
