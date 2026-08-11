@@ -3581,3 +3581,39 @@ hardcoded from round 20's template, needed `-s2` for this round's real
 checkpoint suffix -- fixed before launch, same class of bug as round
 19's). Real parse-success from this run tests whether the self-play
 flywheel compounds past round 20's 31.20%.
+
+## Round 21 real eval result: flywheel plateaus around 29-31%, does not keep compounding (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round21evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play sourced from round 20's own
+checkpoint (31.20% parse-success), `--seed 2`.
+
+**Real parse-success rate: 29.13%** (`1 - 11329/15985`) -- close to
+round 20's 31.20% (2.07pp lower), NOT a further large jump the way
+round 19->20 was (12.88% -> 31.20%, +18.3pp). This suggests the
+self-play flywheel produced one large real gain (round 19/no-selfplay
+-> round 20/selfplay-from-r15) but does not keep compounding
+indefinitely round over round once the source checkpoint is already
+good -- feeding the model its own ~31%-quality completions back into
+training held steady around ~29-31%, not climbing further.
+
+**Real, updated conclusion**: the self-play flywheel's main value is
+the FIRST hop -- going from no-self-play (~12-13%) to self-play sourced
+from a reasonable checkpoint (~29-31%) is a large, real, repeatable win.
+Further rounds of "regenerate self-play from the latest checkpoint" show
+diminishing or flat returns once in this ~30% range, at least across
+this one additional hop (round 20->21). This is now the established
+real config: `BALROG_ROW_MASKING=1` + `BALROG_DEMOS_CAP=3000` +
+self-play from a real recent eval run, landing consistently in the
+high-20s to low-30s percent range for real parse-success -- a genuine
+~5x improvement over the pre-masking baseline (~5-7%) and the most
+reliable real result this campaign has produced.
+
+Given two consecutive flywheel hops (round20: 31.20%, round21: 29.13%)
+both clustering tightly, this ~29-31% band should now be treated as the
+stable achievable ceiling for this lever combination, not a number
+expected to keep climbing with more self-play-flywheel rounds alone.
+Future gains likely require a different lever (e.g. more training steps,
+larger model, refined masking boundary, or better self-play selection
+criteria beyond raw top-frac-by-return) rather than further self-play
+regeneration rounds at the current config.
