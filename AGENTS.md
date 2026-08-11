@@ -3617,3 +3617,16 @@ Future gains likely require a different lever (e.g. more training steps,
 larger model, refined masking boundary, or better self-play selection
 criteria beyond raw top-frac-by-return) rather than further self-play
 regeneration rounds at the current config.
+
+## Round 22 launched: testing training-step-count lever (2026-08-11)
+
+Every round in this campaign (9-21) used the same fixed 600-step
+training budget, inherited unchanged since round 9 and never itself
+tested. This round tests `--steps 1800` (3x) at the proven best config
+(masking on, cap=3000, self-play from round 20's checkpoint -- IDENTICAL
+data source and `--seed 2` to round 21, so steps is the only variable
+changed vs round 21's 29.13% result). If more steps pushes past the
+~29-31% plateau the self-play flywheel hit, step count becomes the next
+real lever; if it doesn't move or regresses (e.g. overfitting on the
+same ~27K-row mixture repeated 3x as many times), that's a real,
+useful negative result too.
