@@ -3873,3 +3873,10 @@ continue the flywheel: self-play sourced from round 26's own checkpoint
 (55.46%), same lr=1.25e-4/steps=600/cap=3000, fresh seed, to test
 whether it keeps compounding or now genuinely plateaus at this much
 higher ceiling.
+
+## Round 27 launched: self-play flywheel round 2 (2026-08-11)
+
+Self-play refreshed to round 26's own checkpoint (55.46% parse-success).
+`--seed 4` (fresh). Config otherwise identical (lr=1.25e-4, steps=600,
+cap=3000, masking=1). Tests whether the flywheel continues compounding
+past 55.46% or plateaus now.
