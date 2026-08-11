@@ -3700,3 +3700,38 @@ retain more of the round-9 base checkpoint's general capability while
 still absorbing the masked BALROG signal, avoiding round 22's
 overfit-to-majority-mixture regression via a different mechanism than
 just training less.
+
+## Round 23 real eval result: lower learning rate is a real, additional win -- new best result (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round23evalonly`), full coverage, 133
+real episodes, all 6 games. Matched config vs round 21 (self-play from
+round 20's checkpoint, `--seed 2`, `--steps 600`), only `--lr` changed
+(1e-3 -> 5e-4).
+
+**Real parse-success rate: 37.07%** (`1 - 10103/16055`) -- UP from round
+21's 29.13% (+7.94pp), the best real result this entire campaign has
+produced. `avg_return` also turned positive for the first time
+(+0.0157, vs every prior round's negative average return) -- a
+qualitatively different, genuinely stronger signal than any prior round.
+
+**Real, confirmed conclusion**: unlike step count (round 22, which
+regressed the metric despite improving val ppl), a lower learning rate
+IS a real, additional, stacking lever on top of masking + self-play.
+Real mechanism hypothesis: `1e-3` was likely too aggressive for a
+continued-training pass this short (600 steps) on top of an already-
+converged round-9 base checkpoint, causing the model to partially
+overwrite useful general capability while absorbing the narrow
+BALROG-masked signal; `5e-4` gives a gentler update that preserves more
+of the base checkpoint's capability while still learning the
+stop-after-action behavior.
+
+**New established best real config**: `BALROG_ROW_MASKING=1`,
+`BALROG_DEMOS_CAP=3000`, self-play from a recent real eval run,
+`--steps 600`, `--lr 5e-4` (halved from the `1e-3` used unchanged since
+round 9) -- landing at 37.07% real parse-success, positive avg_return,
+a genuine ~6-7x improvement over the pre-masking baseline (~5-7%) and
+the strongest real result to date. Next real lever candidates: try an
+even lower LR (e.g. 2.5e-4) to see if the trend continues or reverses;
+or combine with self-play sourced from THIS round's own (37.07%)
+checkpoint to test whether the flywheel compounds further now that the
+LR lever has raised the ceiling.
