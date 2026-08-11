@@ -3814,3 +3814,13 @@ recent real eval run, `--steps 600`, `--lr 1.25e-4` -- a genuine ~6-8x
 real improvement over the campaign's original pre-masking baseline,
 reached through a disciplined chain of seed-controlled, single-lever
 comparisons this session.
+
+## Round 26 launched: self-play flywheel refreshed at new best-LR config (2026-08-11)
+
+Self-play data source refreshed from round 20's checkpoint (used across
+rounds 21-25) to round 25's own checkpoint (40.97% parse-success, the
+best yet). Keeps lr=1.25e-4, steps=600, cap=3000, masking=1 (round 25's
+proven config). `--seed 3` (fresh). Tests whether refreshing self-play
+at the new, LR-tuned checkpoint compounds further -- the earlier
+flywheel plateau (round20->21: 31.20%->29.13%) happened under the old
+lr=1e-3 config, so this may behave differently now.
