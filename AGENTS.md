@@ -3880,3 +3880,19 @@ Self-play refreshed to round 26's own checkpoint (55.46% parse-success).
 `--seed 4` (fresh). Config otherwise identical (lr=1.25e-4, steps=600,
 cap=3000, masking=1). Tests whether the flywheel continues compounding
 past 55.46% or plateaus now.
+
+## Round 27 real training result: flywheel round 2, dramatic self-play row growth (2026-08-11)
+
+Self-play from round 26's checkpoint (55.46% parse-success). Real
+result: `total output rows: 1903` (capped to 1500 for the mixture) --
+up sharply from round 26's 1414, itself up from round 20-sourced
+self-play's 1060-1161. This is a direct, real signal that self-play
+row COUNT scales with source-checkpoint quality (`--top-frac 0.25`
+selects more usable episodes as the source model's real parse-success
+rises), independent of the eval-metric outcome itself. `loss-masked
+4500 BALROG rows, 8.16M prompt tokens excluded`, `0.6431 mean
+trainable-fraction`. `val=3.0977 ppl=22.15`.
+
+Checkpoint published as `heclgang/round27tpurealckpt`; eval kernel
+`heclgang/round27evalonly` launched to test whether the flywheel keeps
+compounding past round 26's 55.46% real parse-success.
