@@ -3997,3 +3997,11 @@ recent checkpoint (round 25's or round 26's both produce ~50-55%),
 `--steps 600`, `--lr 1.25e-4`. This is the standing default going
 forward, representing the best real, reproducibility-confirmed result
 this campaign has produced this session.
+
+## Round 29 launched: self-play flywheel from round28's reproduction checkpoint (2026-08-11)
+
+Testing self-play sourced from round 28 (51.71%, the more conservative
+of the two round25-sourced reproductions), `--seed 6`. Compares against
+round 27's already-tested chain-off-round-26 (55.46%->49.61%
+regression) to see if chaining off the more modest reproduction behaves
+differently.
