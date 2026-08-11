@@ -3824,3 +3824,19 @@ proven config). `--seed 3` (fresh). Tests whether refreshing self-play
 at the new, LR-tuned checkpoint compounds further -- the earlier
 flywheel plateau (round20->21: 31.20%->29.13%) happened under the old
 lr=1e-3 config, so this may behave differently now.
+
+## Round 26 real training result: self-play refresh at new best config (2026-08-11)
+
+Self-play sourced from round 25's own checkpoint (40.97% parse-success).
+Real result: `balrog_selfplay 1414` rows -- up from round 20-sourced
+self-play's 1060-1161, confirming round 25's higher parse-success
+produces even more selectable episodes at `--top-frac 0.25` (a real,
+positive signal about checkpoint quality improving). `loss-masked 4414
+BALROG rows, 7.95M prompt tokens excluded`, `0.6489 mean
+trainable-fraction`. `val=3.1067 ppl=22.35`.
+
+Checkpoint published as `heclgang/round26tpurealckpt`; eval kernel
+`heclgang/round26evalonly` launched. Tests whether self-play refresh
+compounds further now that it's paired with the LR-tuned config
+(lr=1.25e-4), unlike the earlier flywheel plateau (round20->21) which
+happened under the old lr=1e-3.
