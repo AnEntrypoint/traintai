@@ -4090,3 +4090,19 @@ checkpoint (the source that regressed round29's result to 24.46% under
 unweighted selection) reconverted WITH `--parse-rank-weight` set, same
 lr=1.25e-4/steps=600/cap=3000/masking=1/fresh-seed, to see if
 format-aware selection avoids the second-hop regression this time.
+
+## Round 30 real training result: format-aware selection retest confirmed running correctly (2026-08-11)
+
+Self-play from round 28's checkpoint (same source as round 29, which
+regressed to 24.46%), this time with `--parse-rank-weight 2.0` set. Real
+result: `total output rows: 1896` -- matches the local smoke test
+exactly (1896), confirming the format-aware ranking ran identically on
+Kaggle as it did locally. `balrog_selfplay 1500` (capped),
+`loss-masked 4500 BALROG rows, 8.23M prompt tokens excluded`, `0.6411
+mean trainable-fraction`. `val=3.0991 ppl=22.18`.
+
+Checkpoint published as `heclgang/round30tpurealckpt`; eval kernel
+`heclgang/round30evalonly` launched -- this is the decisive test of
+whether format-aware self-play selection avoids the second-hop
+regression round 29 hit under unweighted selection (both using the
+exact same round-28-checkpoint source).
