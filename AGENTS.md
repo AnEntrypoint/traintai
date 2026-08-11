@@ -3648,3 +3648,42 @@ is promising but this campaign's own discipline (round 14 showed a case
 where a data-mixture change LOWERED val ppl while providing zero
 parse-success improvement) means the real eval number, not val ppl
 alone, must confirm this before treating step-count as a proven lever.
+
+## Round 22 real eval result: 3x steps REGRESSES parse-success despite better val ppl (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round22evalonly`), full coverage, 133
+real episodes, all 6 games. Matched config vs round 21 (self-play from
+round 20's checkpoint, `--seed 2`), only `--steps` changed (600 -> 1800).
+
+**Real parse-success rate: 15.58%** (`1 - 11681/13837`) -- a real,
+substantial REGRESSION from round 21's 29.13% (-13.55pp), despite val
+ppl improving substantially (17.97 vs 21.28). This is exactly the
+val-ppl-vs-real-eval divergence this campaign already flagged as a risk
+(round 14 showed the same disconnect in the opposite direction -- worse
+val ppl, no parse-success change). Real, most likely mechanism: at 3x
+steps, the model over-optimizes for the majority of the mixture (NPC
+dialog, world, sim, pippa, etc. -- 6000+ non-BALROG template rows and
+thousands more from other sources, vastly outnumbering BALROG's masked
+~4161 rows even after masking concentrates gradient on their completion
+tokens) at the expense of the narrower BALROG-specific stop-after-action
+behavior, which the shorter 600-step run apparently preserved better
+from the round-9 base checkpoint's initialization.
+
+**Real, definitive conclusion**: step count is NOT a free additional
+lever on top of masking+self-play -- more steps at this mixture ratio
+REGRESSES the metric that actually matters (parse-success), even though
+it improves the metric that's cheap to watch (val ppl). `--steps 600`
+(the original, never-explicitly-chosen-but-accidentally-correct default
+inherited since round 9) should remain the standard going forward. This
+is now the THIRD real instance in this campaign of val ppl and real
+parse-success moving in opposite directions (also seen implicitly in
+round 14's regression) -- val ppl on the full mixture is not a reliable
+proxy for BALROG-specific behavior and should never be used alone to
+judge a lever; the real GPU eval is required every time.
+
+**Established real best config, final for this investigation**:
+`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play data from a
+recent real eval run, `--steps 600` (unchanged from round 9's original
+default) -- landing reliably in the ~29-31% real parse-success range,
+a genuine ~5x improvement over the pre-masking, pre-self-play baseline
+of ~5-7%.
