@@ -4303,3 +4303,12 @@ produces -- a genuine **9-12x** improvement over the original ~5-7%
 pre-masking baseline. Further individual hops are unlikely to yield
 large additional gains at this point; if continuing, expect noise-level
 movement around this plateau rather than further large jumps.
+
+## Round 34 launched: flywheel hop 5, confirming plateau vs noise (2026-08-11)
+
+Self-play from round 33's checkpoint (56.39%), format-aware selection,
+`--seed 11`. Fifth data point in the trajectory (48.45 -> 52.27 -> 58.65
+-> 56.39 -> ?) to determine if the campaign has reached a real plateau
+or round 33's dip was noise. Continuing per explicit user direction to
+keep training until quality is maximized, not stop at the first small
+dip.
