@@ -3938,3 +3938,14 @@ number, or (b) accept round 26's checkpoint as the current best
 deliverable and stop iterating this specific lever, given the
 demonstrated real ~6-8x-to-11x improvement already achieved this
 session over the original ~5-7% baseline.
+
+## Round 28 launched: reproducibility check on round 26's 55.46% result (2026-08-11)
+
+Round 27's regression (55.46% -> 49.61%) raised the question of whether
+round 26's result is reproducible or itself a lucky single-run outlier.
+This round reproduces round 26's EXACT config -- self-play from round
+25's checkpoint (NOT round 26's or round 27's), lr=1.25e-4, steps=600,
+cap=3000, masking=1 -- with a fresh `--seed 5`. If this lands near
+55.46%, that config is confirmed genuinely strong; if it lands closer to
+round 25's 40.97% or lower, round 26's number was itself high-variance
+luck, similar to round 15's original 27.02% outlier.
