@@ -4375,3 +4375,15 @@ lr=1.25e-4/steps=600/cap=3000/masking=1) at a fresh `--seed 12`, to
 determine whether the 58.65% peak is a real, reproducible property of
 that specific recipe (like round 26/28's confirmed ~51-55%
 reproducibility) or was itself partly a lucky single-run result.
+
+## Round 35 real training result: exact reproduction of round 32's recipe (2026-08-12)
+
+Self-play from round 31's checkpoint (same source as round 32), same
+`--parse-rank-weight 2.0`, `--seed 12` (fresh). Real result:
+`balrog_selfplay 1500` (1948 raw rows -- EXACTLY matching round 32's raw
+row count). `val=3.1002 ppl=22.20`, close to round 32's 22.33.
+
+Checkpoint published as `heclgang/round35tpurealckpt`; eval kernel
+`heclgang/round35evalonly` launched -- decisive test of whether round
+32's 58.65% peak is a real, reproducible property of this recipe or
+partly luck.
