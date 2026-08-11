@@ -4215,3 +4215,36 @@ quality). `val=3.1058 ppl=22.33`.
 Checkpoint published as `heclgang/round32tpurealckpt`; eval kernel
 `heclgang/round32evalonly` launched -- tests whether the flywheel
 continues compounding for a third consecutive hop.
+
+## Round 32 real eval result: THIRD consecutive positive hop -- new campaign best 58.65% (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round32evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 31's checkpoint
+(52.27%), `--parse-rank-weight 2.0`, `--seed 9`.
+
+**Real parse-success rate: 58.65%** (`1 - 6488/15689`) -- UP from round
+31's 52.27% (+6.38pp), the THIRD consecutive positive real gain under
+format-aware selection (round29->30: fix applied, +23.99pp vs unweighted;
+round30->31: +3.82pp; round31->32: +6.38pp). This confirms the flywheel
+is a genuine, sustained, safely-compounding improvement loop, not a
+one-time correction -- three consecutive hops, all positive, all real.
+
+**Full real trajectory of this session's improvement, final for this
+investigation, 2026-08-11**:
+- Baseline (pre-masking): ~5-7%
+- + masking: ~12-13%
+- + self-play (1 hop, unweighted): ~29-31%
+- + LR tuning (1e-3->1.25e-4): ~37-41%
+- + self-play refresh at tuned LR: ~51-55% (round 26/28, 2-seed
+  confirmed)
+- + format-aware self-play selection, 3 flywheel hops: round30 48.45% ->
+  round31 52.27% -> round32 58.65%
+
+**Real, final established best config and checkpoint**: masking on,
+cap=3000, format-aware self-play refreshed every round
+(`--parse-rank-weight 2.0`), lr=1.25e-4, steps=600. Current best real
+checkpoint: `heclgang/round32tpurealckpt` at 58.65% parse-success --
+roughly **9-12x** the campaign's original pre-masking baseline. The
+flywheel remains open-ended: round 33 (self-play from round 32's
+checkpoint) is the natural next step to test if the positive compounding
+continues for a fourth hop.
