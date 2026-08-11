@@ -4204,3 +4204,14 @@ aware selection (`--parse-rank-weight 2.0`), `--seed 9`. Tests whether
 the positive compounding (round30->31: +3.82pp) continues for a third
 hop, confirming the flywheel is a genuinely sustained improvement loop
 rather than a one-time correction.
+
+## Round 32 real training result: flywheel hop 3 (2026-08-11)
+
+Self-play from round 31's checkpoint (52.27%, campaign best), format-
+aware selection. Real result: `balrog_selfplay 1500` (1948 raw rows,
+the highest yet, consistent with the source checkpoint's rising real
+quality). `val=3.1058 ppl=22.33`.
+
+Checkpoint published as `heclgang/round32tpurealckpt`; eval kernel
+`heclgang/round32evalonly` launched -- tests whether the flywheel
+continues compounding for a third consecutive hop.
