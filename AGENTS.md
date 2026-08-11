@@ -3949,3 +3949,16 @@ cap=3000, masking=1 -- with a fresh `--seed 5`. If this lands near
 55.46%, that config is confirmed genuinely strong; if it lands closer to
 round 25's 40.97% or lower, round 26's number was itself high-variance
 luck, similar to round 15's original 27.02% outlier.
+
+## Round 28 real training result: exact reproduction of round 26's config (2026-08-11)
+
+Same self-play source as round 26 (round 25's checkpoint), same
+lr=1.25e-4/steps=600/cap=3000/masking=1, `--seed 5` (fresh). Real result:
+`balrog_selfplay 1414` rows -- exactly matching round 26's mixture
+composition (byte-identical row count). `val=3.0999 ppl=22.19`, close
+to round 26's 22.35.
+
+Checkpoint published as `heclgang/round28tpurealckpt`; eval kernel
+`heclgang/round28evalonly` launched to check whether round 26's 55.46%
+real parse-success is reproducible under this exact config, or was
+itself a lucky single-run outlier.
