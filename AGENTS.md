@@ -4253,3 +4253,15 @@ continues for a fourth hop.
 
 Self-play from round 32's checkpoint (58.65%, campaign best),
 `--parse-rank-weight 2.0`, `--seed 10`. Fourth consecutive hop test.
+
+## Round 33 real training result: flywheel hop 4 (2026-08-11)
+
+Self-play from round 32's checkpoint (58.65%, campaign best). Real
+result: `balrog_selfplay 1500` (2198 raw rows, the highest yet -- a
+clean, monotonic trend across all four flywheel hops: 1896 -> 1845 ->
+1948 -> 2198 raw rows, tracking the source checkpoint's rising real
+quality each time). `val=3.1009 ppl=22.22`.
+
+Checkpoint published as `heclgang/round33tpurealckpt`; eval kernel
+`heclgang/round33evalonly` launched -- tests the fourth consecutive
+flywheel hop.
