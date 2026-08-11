@@ -3766,3 +3766,9 @@ that this may not be worth many more halvings. Current best real config:
 real eval run, `--steps 600`, `--lr 2.5e-4` -- 39.79% parse-success, the
 best result to date, a genuine ~6-8x improvement over the pre-masking
 baseline (~5-7%).
+
+## Round 25 launched: third LR halving (2026-08-11)
+
+Testing `--lr 1.25e-4` (half of round 24's 2.5e-4) to see if the
+diminishing-returns LR curve (+7.94pp, then +2.72pp) continues, flattens,
+or reverses. Same self-play source/seed/steps as rounds 21-24.
