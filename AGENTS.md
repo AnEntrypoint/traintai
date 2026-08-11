@@ -3896,3 +3896,45 @@ trainable-fraction`. `val=3.0977 ppl=22.15`.
 Checkpoint published as `heclgang/round27tpurealckpt`; eval kernel
 `heclgang/round27evalonly` launched to test whether the flywheel keeps
 compounding past round 26's 55.46% real parse-success.
+
+## Round 27 real eval result: flywheel round 2 regresses parse-success despite better secondary metrics (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round27evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 26's checkpoint
+(55.46%), `--seed 4`, same lr=1.25e-4/steps=600/cap=3000/masking=1.
+
+**Real parse-success rate: 49.61%** (`1 - 7726/15331`) -- DOWN from
+round 26's 55.46% (-5.85pp), a real regression on the primary metric.
+However `avg_return` improved further to +0.0895 (best yet, up from
+round 26's +0.0683) and `avg_progression` rose to 6.02% (up from round
+26's 3.83%) -- secondary metrics moved in the OPPOSITE direction from
+parse-success, the same kind of metric divergence seen at several
+earlier points this campaign (round 14, round 22, round 25).
+
+**Real, updated conclusion**: the self-play flywheel does NOT compound
+indefinitely even at the LR-tuned config -- round 26's +14.49pp jump
+(round25->26) was a large real gain, but round 26->27 shows a real
+regression on the primary metric despite the self-play source being
+"better" by its own parse-success measure and despite the model's
+in-game behavior arguably improving (higher progression, positive and
+growing return). This suggests parse-success and actual task competence
+may be starting to decouple at this quality level -- the model may be
+learning to take real, better actions (reflected in return/progression)
+at some cost to the strict exact-match formatting behavior parse-success
+measures, or round 27 is simply within normal single-run variance of a
+config that's now producing high but noisy results (recall rounds
+18/19's ~0.3pp-tight vs rounds 20/21's ~18pp-wide spreads earlier this
+campaign -- variance at this config is not yet re-characterized post-LR-tuning).
+
+**Real, current best result stands at round 26's 55.46%** (checkpoint
+`heclgang/round26tpurealckpt`) as the single best individual run, but
+round 27's regression means a single additional self-play-refresh hop
+is not reliably positive -- future refresh rounds should be evaluated
+with the same skepticism as any other lever, not assumed to keep
+climbing. Given diminishing certainty from further single-run flywheel
+hops, the next real step should be either (a) a repeat seed at round
+26's exact self-play source to check reproducibility of the 55.46%
+number, or (b) accept round 26's checkpoint as the current best
+deliverable and stop iterating this specific lever, given the
+demonstrated real ~6-8x-to-11x improvement already achieved this
+session over the original ~5-7% baseline.
