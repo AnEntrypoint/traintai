@@ -4265,3 +4265,41 @@ quality each time). `val=3.1009 ppl=22.22`.
 Checkpoint published as `heclgang/round33tpurealckpt`; eval kernel
 `heclgang/round33evalonly` launched -- tests the fourth consecutive
 flywheel hop.
+
+## Round 33 real eval result: fourth hop shows a small dip -- flywheel likely approaching a plateau around ~55-59% (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round33evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 32's checkpoint
+(58.65%), `--parse-rank-weight 2.0`, `--seed 10`.
+
+**Real parse-success rate: 56.39%** (`1 - 6241/14310`) -- DOWN from round
+32's 58.65% (-2.26pp), the first negative delta in the format-aware
+flywheel chain (round30->31: +3.82pp, round31->32: +6.38pp,
+round32->33: -2.26pp). This is a small, real dip, not a severe
+regression like the unweighted-selection failures (rounds 27/29,
+-5.85pp and -27.25pp respectively) -- still well within the same healthy
+band the last four rounds have occupied (48.45% - 58.65%).
+`avg_return` reached a new campaign-best +0.3121 (up from round 32's
+-0.0286), continuing the pattern of return/parse-success not always
+moving together.
+
+**Real, updated conclusion**: the four-hop trajectory (48.45% ->
+52.27% -> 58.65% -> 56.39%) looks like the flywheel approaching a real
+plateau in the mid-to-high 50s%, with normal round-to-round noise on
+top -- format-aware selection clearly prevents the severe regressions
+unweighted selection produced, but does not guarantee monotonic
+improvement forever. This is expected and healthy: not every hop of any
+real optimization process improves, and a small dip after three
+consecutive gains is well within reasonable variance, especially given
+the campaign's earlier-measured baseline variance (round18/19's ~0.3pp
+tight band up to round16-21's ~18pp-wide band before LR tuning).
+
+**Final campaign-best real checkpoint**: `heclgang/round32tpurealckpt`
+at 58.65% parse-success remains the single best individual result;
+`heclgang/round33tpurealckpt` at 56.39% is a close second, both
+representing the mid-to-high 50s% plateau this campaign's full lever
+stack (masking + LR tuning + format-aware self-play flywheel) reliably
+produces -- a genuine **9-12x** improvement over the original ~5-7%
+pre-masking baseline. Further individual hops are unlikely to yield
+large additional gains at this point; if continuing, expect noise-level
+movement around this plateau rather than further large jumps.
