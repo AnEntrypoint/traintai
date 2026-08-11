@@ -4005,3 +4005,15 @@ of the two round25-sourced reproductions), `--seed 6`. Compares against
 round 27's already-tested chain-off-round-26 (55.46%->49.61%
 regression) to see if chaining off the more modest reproduction behaves
 differently.
+
+## Round 29 real training result: self-play from round28's checkpoint (2026-08-11)
+
+Self-play from round 28's checkpoint (51.71%). Real result:
+`balrog_selfplay 1500` (capped, 1821 raw rows generated). `val=3.1020
+ppl=22.24`.
+
+Checkpoint published as `heclgang/round29tpurealckpt`; eval kernel
+`heclgang/round29evalonly` launched. Compares against round 27's already-
+tested chain-off-round-26 (55.46%->49.61%) to see if a more modest
+source checkpoint (round 28's 51.71%, vs round 26's 55.46%) behaves
+differently under the same flywheel-refresh lever.
