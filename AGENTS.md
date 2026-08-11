@@ -3742,3 +3742,27 @@ Round 23 confirmed `--lr 5e-4` beats `1e-3` (37.07% vs 29.13%). This
 round tests `--lr 2.5e-4` (half again) at the identical self-play
 source/steps/seed as round 23, to see if the trend continues or
 reverses/plateaus.
+
+## Round 24 real eval result: further LR reduction still helps, diminishing returns (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round24evalonly`), full coverage, 133
+real episodes, all 6 games. `--lr 2.5e-4` (half of round 23's 5e-4),
+otherwise identical config/seed/self-play source.
+
+**Real parse-success rate: 39.79%** (`1 - 9680/16076`) -- UP from round
+23's 37.07% (+2.72pp), a new best result, but a much smaller gain than
+the 1e-3->5e-4 jump (+7.94pp) -- clear diminishing returns as LR drops
+further. `avg_return` dipped back slightly negative (-0.0420, vs round
+23's +0.0157) despite parse-success improving, another reminder that
+`avg_return`/`avg_progression` and parse-success don't always move
+together and parse-success remains the primary metric.
+
+**Real, updated conclusion**: LR reduction is a real, diminishing-returns
+lever -- 1e-3 -> 5e-4 gave +7.94pp, 5e-4 -> 2.5e-4 gave +2.72pp. The
+curve suggests approaching a ceiling; halving again (1.25e-4) would be
+the natural next test, but the marginal gain is shrinking fast enough
+that this may not be worth many more halvings. Current best real config:
+`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play from a recent
+real eval run, `--steps 600`, `--lr 2.5e-4` -- 39.79% parse-success, the
+best result to date, a genuine ~6-8x improvement over the pre-masking
+baseline (~5-7%).
