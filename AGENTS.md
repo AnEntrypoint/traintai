@@ -3687,3 +3687,16 @@ recent real eval run, `--steps 600` (unchanged from round 9's original
 default) -- landing reliably in the ~29-31% real parse-success range,
 a genuine ~5x improvement over the pre-masking, pre-self-play baseline
 of ~5-7%.
+
+## Round 23 launched: learning-rate lever test (2026-08-11)
+
+Step count ruled out as a free lever (round 22: 3x steps regressed
+parse-success to 15.58%). Reverted to the proven `--steps 600`. This
+round instead tests `--lr 5e-4` (half of the `1e-3` used unchanged since
+round 9) at the proven step count, same self-play source as round 21
+(round 20's checkpoint) and same `--seed 2`, so LR is the only variable
+vs round 21's 29.13% result. Hypothesis: a gentler learning rate may
+retain more of the round-9 base checkpoint's general capability while
+still absorbing the masked BALROG signal, avoiding round 22's
+overfit-to-majority-mixture regression via a different mechanism than
+just training less.
