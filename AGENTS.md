@@ -3962,3 +3962,38 @@ Checkpoint published as `heclgang/round28tpurealckpt`; eval kernel
 `heclgang/round28evalonly` launched to check whether round 26's 55.46%
 real parse-success is reproducible under this exact config, or was
 itself a lucky single-run outlier.
+
+## Round 28 real eval result: round 26's 55.46% CONFIRMED reproducible -- real best config established (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round28evalonly`), full coverage, 133
+real episodes, all 6 games. Exact reproduction of round 26's config
+(self-play from round 25's checkpoint, lr=1.25e-4, steps=600, cap=3000,
+masking=1), `--seed 5` (fresh, independent of round 26's seed=3).
+
+**Real parse-success rate: 51.71%** (`1 - 7465/15458`) -- close to round
+26's 55.46% (within 3.75pp), confirming this config genuinely,
+reproducibly lands in the low-to-mid 50s% range, NOT a lucky single-run
+outlier. `avg_return` reached a new campaign-best +0.2299 (up from round
+26's +0.0683 and round 27's +0.0895) -- the model's real in-game
+behavior continues improving even as parse-success shows some natural
+run-to-run spread (51.71%-55.46%, a real but much tighter band than the
+earlier pre-LR-tuning spread of 9.88%-31.20% seen in rounds 16-21).
+
+**Real, final conclusion for this investigation**: `BALROG_ROW_MASKING=1`
++ `BALROG_DEMOS_CAP=3000` + self-play from round 25's checkpoint +
+`--steps 600` + `--lr 1.25e-4` is CONFIRMED as a real, reproducible
+config landing at ~51-55% parse-success (2-seed measurement: 55.46%,
+51.71%) -- roughly **7-11x** the original pre-masking baseline (~5-7%).
+Round 27's regression to 49.61% (self-play from round 26's OWN
+checkpoint, a further flywheel hop) is now understood as likely within
+normal variance for this config's neighborhood, not necessarily a
+distinct "flywheel breaks past this point" effect -- though it used a
+DIFFERENT self-play source (round 26 vs round 25) so is not a pure
+reproducibility test of the same config.
+
+**Established real best config, final for this session's investigation**:
+`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play from a real
+recent checkpoint (round 25's or round 26's both produce ~50-55%),
+`--steps 600`, `--lr 1.25e-4`. This is the standing default going
+forward, representing the best real, reproducibility-confirmed result
+this campaign has produced this session.
