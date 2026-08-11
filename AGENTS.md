@@ -3840,3 +3840,36 @@ Checkpoint published as `heclgang/round26tpurealckpt`; eval kernel
 compounds further now that it's paired with the LR-tuned config
 (lr=1.25e-4), unlike the earlier flywheel plateau (round20->21) which
 happened under the old lr=1e-3.
+
+## Round 26 real eval result: self-play flywheel compounds strongly at the LR-tuned config -- major new best (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round26evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play refreshed from round 25's own
+checkpoint (40.97% parse-success), `--seed 3`, at the proven
+lr=1.25e-4/steps=600/cap=3000/masking=1 config.
+
+**Real parse-success rate: 55.46%** (`1 - 6821/15315`) -- a massive real
+jump from round 25's 40.97% (+14.49pp), the largest single-round gain
+since the original masking fix (round 15/18/19's ~5-7% -> ~12-13% jump).
+`avg_return` also improved further to +0.0683 (best yet, up from round
+25's -0.1862).
+
+**Real, updated conclusion**: unlike the earlier self-play flywheel
+plateau (round20->21, 31.20%->29.13%, which happened under the OLD
+lr=1e-3 config), refreshing self-play now DOES compound strongly once
+paired with the LR-tuned config (lr=1.25e-4). This strongly suggests the
+earlier plateau was itself an LR-related ceiling, not an inherent limit
+of the self-play flywheel mechanism -- the gentler learning rate lets
+each successive self-play refresh's improvements actually stick, rather
+than being partially overwritten by an overly aggressive update.
+
+**New established best real config**: `BALROG_ROW_MASKING=1`,
+`BALROG_DEMOS_CAP=3000`, self-play from THIS round's own checkpoint
+(refresh every round), `--steps 600`, `--lr 1.25e-4` -- landing at real
+parse-success **55.46%**, positive avg_return, roughly **8-11x** the
+original pre-masking baseline (~5-7%). Given this round showed the
+flywheel is NOT plateaued after all under the right LR, round 27 should
+continue the flywheel: self-play sourced from round 26's own checkpoint
+(55.46%), same lr=1.25e-4/steps=600/cap=3000, fresh seed, to test
+whether it keeps compounding or now genuinely plateaus at this much
+higher ceiling.
