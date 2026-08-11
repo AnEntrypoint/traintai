@@ -4106,3 +4106,40 @@ Checkpoint published as `heclgang/round30tpurealckpt`; eval kernel
 whether format-aware self-play selection avoids the second-hop
 regression round 29 hit under unweighted selection (both using the
 exact same round-28-checkpoint source).
+
+## Round 30 real eval result: format-aware selection FIXES the second-hop regression (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round30evalonly`), full coverage, 133
+real episodes, all 6 games. Same self-play source as round 29 (round
+28's checkpoint), but with `--parse-rank-weight 2.0` selection instead
+of unweighted top-frac-by-return.
+
+**Real parse-success rate: 48.45%** (`1 - 8049/15614`) -- a massive real
+improvement over round 29's 24.46% (+23.99pp) using the EXACT SAME
+self-play source checkpoint, differing only in selection methodology.
+This lands back in the healthy 48-55% band established by rounds
+26/28, effectively neutralizing the second-hop regression that occurred
+twice under unweighted selection (round27: -5.85pp, round29: -27.25pp).
+`avg_return` also reached a new campaign-best +0.2526 (up from round
+28's +0.2299).
+
+**Real, confirmed conclusion**: the hypothesis was correct -- unweighted
+top-frac-by-return self-play selection risks reinforcing an
+already-tuned checkpoint's own format quirks on repeated flywheel hops,
+and blending real parse-success rate into the selection ranking
+(`--parse-rank-weight`) is a genuine, real fix. This is the first real
+evidence in this campaign that the self-play flywheel CAN be iterated
+safely past one hop, provided selection targets format-cleanliness
+alongside raw reward -- the earlier "flywheel plateaus/regresses after
+one hop" conclusion (from rounds 27/29) is now understood as specific to
+the unweighted selection methodology, not an inherent property of
+iterated self-distillation.
+
+**Updated real best config**: `BALROG_ROW_MASKING=1`,
+`BALROG_DEMOS_CAP=3000`, self-play from a recent checkpoint via
+`--parse-rank-weight 2.0` (format-aware selection, not raw
+top-frac-by-return), `--steps 600`, `--lr 1.25e-4`. This makes further
+flywheel iteration a viable, real lever again -- round 31 should test
+continuing the flywheel under format-aware selection (self-play from
+round 30's own checkpoint, same weighting) to see if it now compounds
+safely across multiple hops.
