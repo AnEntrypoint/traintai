@@ -4364,3 +4364,14 @@ real peak) with a fresh seed, rather than continuing to chain off the
 now-declining sequence -- analogous to how round 28 confirmed round 26's
 result was real by reproducing it directly, rather than extending
 further from round 27's regression.
+
+## Round 35 launched: re-anchor at round 32's peak, reproducibility check (2026-08-11)
+
+Rounds 33/34 confirmed two consecutive real declines past round 32's
+peak (58.65%). Rather than continuing the declining chain, this round
+reproduces round 32's EXACT recipe (self-play from round 31's checkpoint
+via `heclgang/round31-eval-results`, same `--parse-rank-weight 2.0`,
+lr=1.25e-4/steps=600/cap=3000/masking=1) at a fresh `--seed 12`, to
+determine whether the 58.65% peak is a real, reproducible property of
+that specific recipe (like round 26/28's confirmed ~51-55%
+reproducibility) or was itself partly a lucky single-run result.
