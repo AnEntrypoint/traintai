@@ -3772,3 +3772,45 @@ baseline (~5-7%).
 Testing `--lr 1.25e-4` (half of round 24's 2.5e-4) to see if the
 diminishing-returns LR curve (+7.94pp, then +2.72pp) continues, flattens,
 or reverses. Same self-play source/seed/steps as rounds 21-24.
+
+## Round 25 real eval result: LR curve confirmed flattening, natural stopping point (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round25evalonly`), full coverage, 133
+real episodes, all 6 games. `--lr 1.25e-4` (third halving).
+
+**Real parse-success rate: 40.97%** (`1 - 8962/15181`) -- up from round
+24's 39.79% (+1.18pp), continuing but clearly flattening: the LR-halving
+gains are now 7.94pp -> 2.72pp -> 1.18pp, a clean decaying curve. Also
+`avg_progression` reached its campaign-best 8.30% (vs round 24's 3.01%),
+even though `avg_return` stayed negative (-0.1862) -- progression and
+return don't always track together at the episode level, but
+parse-success remains the primary/most stable metric this campaign
+uses.
+
+**Real, final conclusion on the LR lever**: further halving (e.g.
+0.625e-4) would likely yield well under 1pp additional gain per this
+decay pattern -- diminishing returns have reached the point where this
+lever is not worth pursuing further in isolation. `--lr 1.25e-4` is
+adopted as the new standing default (documented here for future rounds
+to inherit), landing at real parse-success **40.97%**, avg_progression
+8.30% -- both campaign-best results.
+
+**Full real progression of every real lever tested this session,
+2026-08-11 final state**:
+- Pre-masking baseline (rounds 9/13/14): ~5-7% parse-success (flat, noisy)
+- + BALROG_ROW_MASKING=1 (masking the prompt-loss): ~12-13% (2-seed
+  controlled measurement, rounds 18/19)
+- + self-play from a recent real eval checkpoint: ~29-31% (round 20,
+  seed-controlled vs round 19)
+- + lower LR (1e-3 -> 5e-4 -> 2.5e-4 -> 1.25e-4): 37.07% -> 39.79% ->
+  40.97% (rounds 23/24/25, diminishing but real gains at each step)
+- Ruled out: BALROG_DEMOS_CAP increase (regressed at both masked and
+  unmasked settings), 3x training steps (regressed despite better val
+  ppl -- overfits toward the non-BALROG majority mixture)
+
+**Established real best config (standing default going forward)**:
+`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play data from a
+recent real eval run, `--steps 600`, `--lr 1.25e-4` -- a genuine ~6-8x
+real improvement over the campaign's original pre-masking baseline,
+reached through a disciplined chain of seed-controlled, single-lever
+comparisons this session.
