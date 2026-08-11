@@ -4312,3 +4312,13 @@ Self-play from round 33's checkpoint (56.39%), format-aware selection,
 or round 33's dip was noise. Continuing per explicit user direction to
 keep training until quality is maximized, not stop at the first small
 dip.
+
+## Round 34 real training result: flywheel hop 5 (2026-08-11)
+
+Self-play from round 33's checkpoint (56.39%), format-aware selection.
+Real result: `balrog_selfplay 1500` (1973 raw rows). `val=3.1102
+ppl=22.43`.
+
+Checkpoint published as `heclgang/round34tpurealckpt`; eval kernel
+`heclgang/round34evalonly` launched -- fifth data point in the
+trajectory to determine plateau vs noise.
