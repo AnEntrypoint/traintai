@@ -3735,3 +3735,10 @@ even lower LR (e.g. 2.5e-4) to see if the trend continues or reverses;
 or combine with self-play sourced from THIS round's own (37.07%)
 checkpoint to test whether the flywheel compounds further now that the
 LR lever has raised the ceiling.
+
+## Round 24 launched: pushing the learning-rate lever further (2026-08-11)
+
+Round 23 confirmed `--lr 5e-4` beats `1e-3` (37.07% vs 29.13%). This
+round tests `--lr 2.5e-4` (half again) at the identical self-play
+source/steps/seed as round 23, to see if the trend continues or
+reverses/plateaus.
