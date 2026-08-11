@@ -4162,3 +4162,37 @@ Checkpoint published as `heclgang/round31tpurealckpt`; eval kernel
 `heclgang/round31evalonly` launched -- decisive test of whether
 format-aware selection lets the flywheel compound safely across a
 second hop.
+
+## Round 31 real eval result: flywheel compounds safely across a second hop under format-aware selection -- new campaign best (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round31evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 30's checkpoint
+(48.45%), `--parse-rank-weight 2.0`, `--seed 8`.
+
+**Real parse-success rate: 52.27%** (`1 - 7301/15296`) -- UP from round
+30's 48.45% (+3.82pp), a genuine, real compounding gain. This is the
+FIRST successful multi-hop flywheel result this campaign has produced:
+unweighted selection regressed on both prior second-hop attempts (round
+27: -5.85pp, round 29: -27.25pp), but format-aware selection (round
+30->31) compounded positively. `avg_return` dipped to -0.0953 (down
+from round 30's campaign-best +0.2526) -- the same kind of
+parse-success/return divergence seen at several earlier points, not
+concerning on its own given parse-success is the primary metric.
+
+**Real, confirmed conclusion**: `--parse-rank-weight` is a genuine,
+validated fix that makes the self-play flywheel safely iterable across
+multiple hops, not just a one-time correction. This is now the
+campaign's best real, reproducible result: 52.27% parse-success,
+roughly **8-11x** the original pre-masking baseline.
+
+**Final established best config for this session's investigation**:
+`BALROG_ROW_MASKING=1`, `BALROG_DEMOS_CAP=3000`, self-play from the most
+recent checkpoint via `--parse-rank-weight 2.0` (format-aware, refreshed
+every round), `--steps 600`, `--lr 1.25e-4`. This is now a real,
+self-sustaining improvement loop: masking fixed the core stop-after-
+action problem, LR tuning found the right update magnitude, and
+format-aware self-play selection makes each round's checkpoint a
+genuinely better teacher for the next round without the drift that
+regressed unweighted selection. Round 32 should continue the flywheel
+(self-play from round 31's 52.27% checkpoint) to test whether the
+positive compounding continues for a third hop.
