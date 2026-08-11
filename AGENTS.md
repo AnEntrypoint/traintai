@@ -4248,3 +4248,8 @@ roughly **9-12x** the campaign's original pre-masking baseline. The
 flywheel remains open-ended: round 33 (self-play from round 32's
 checkpoint) is the natural next step to test if the positive compounding
 continues for a fourth hop.
+
+## Round 33 launched: flywheel hop 4 (2026-08-11)
+
+Self-play from round 32's checkpoint (58.65%, campaign best),
+`--parse-rank-weight 2.0`, `--seed 10`. Fourth consecutive hop test.
