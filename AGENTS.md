@@ -4143,3 +4143,11 @@ flywheel iteration a viable, real lever again -- round 31 should test
 continuing the flywheel under format-aware selection (self-play from
 round 30's own checkpoint, same weighting) to see if it now compounds
 safely across multiple hops.
+
+## Round 31 launched: flywheel hop 2 under format-aware selection (2026-08-11)
+
+Self-play from round 30's checkpoint (48.45%, produced under format-
+aware selection), `--parse-rank-weight 2.0` again, `--seed 8`. Tests
+whether the flywheel now compounds safely across multiple hops under
+format-aware selection, unlike the real regressions seen under
+unweighted selection (rounds 27, 29).
