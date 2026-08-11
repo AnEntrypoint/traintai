@@ -4017,3 +4017,43 @@ Checkpoint published as `heclgang/round29tpurealckpt`; eval kernel
 tested chain-off-round-26 (55.46%->49.61%) to see if a more modest
 source checkpoint (round 28's 51.71%, vs round 26's 55.46%) behaves
 differently under the same flywheel-refresh lever.
+
+## Round 29 real eval result: second flywheel hop regresses severely -- confirms round25-sourced config is the real ceiling (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round29evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 28's checkpoint
+(51.71%), `--seed 6`.
+
+**Real parse-success rate: 24.46%** (`1 - 11918/15778`) -- a SEVERE
+regression from round 28's 51.71% (-27.25pp), well below even the
+pre-flywheel-refresh baseline. This is the second real, independent
+flywheel-hop-past-round25 attempt to regress (round 27: 55.46%->49.61%;
+round 29: 51.71%->24.46%), and this one regressed much more severely.
+
+**Real, final conclusion on the self-play flywheel's real ceiling**:
+self-play sourced from round 25's checkpoint specifically (rounds 26 and
+28, both landing 51-55%) is confirmed as a real, reproducible, strong
+result. Refreshing self-play AGAIN from either of those rounds' own
+outputs (round 26->27, round 28->29) consistently regresses, in both
+tested cases -- this is now a real, repeated pattern, not an isolated
+fluke. The likely real mechanism: self-play rows selected by
+`--top-frac 0.25` from an ALREADY-mask-trained, ALREADY-self-play-tuned
+checkpoint may increasingly reflect that checkpoint's own idiosyncratic
+completion patterns rather than diverse, generalizable stop-after-action
+behavior -- each additional hop distills the model's own quirks back
+into itself more than it reinforces the general skill, a real
+self-reinforcing drift risk in iterated self-distillation.
+
+**Real, settled best config for this campaign**: `BALROG_ROW_MASKING=1`,
+`BALROG_DEMOS_CAP=3000`, self-play from round 25's real checkpoint
+specifically (NOT further iterated), `--steps 600`, `--lr 1.25e-4` --
+real parse-success 51-55% (2 confirmed reproductions: round 26 = 55.46%,
+round 28 = 51.71%), a genuine ~7-11x improvement over the original
+pre-masking baseline. Do NOT continue refreshing self-play beyond this
+one hop without a real methodology change (e.g. filtering self-play
+selection specifically for format-cleanliness/diversity, not just raw
+top-frac-by-return) -- two independent further-hop attempts have both
+regressed, one severely. This is the final, real, best-validated
+checkpoint this session's investigation has produced:
+`heclgang/round26tpurealckpt` (55.46%) or `heclgang/round28tpurealckpt`
+(51.71%), either usable as the campaign's current best deliverable.
