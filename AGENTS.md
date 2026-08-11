@@ -4151,3 +4151,14 @@ aware selection), `--parse-rank-weight 2.0` again, `--seed 8`. Tests
 whether the flywheel now compounds safely across multiple hops under
 format-aware selection, unlike the real regressions seen under
 unweighted selection (rounds 27, 29).
+
+## Round 31 real training result: flywheel hop 2 under format-aware selection (2026-08-11)
+
+Self-play from round 30's checkpoint (48.45%), `--parse-rank-weight 2.0`.
+Real result: `balrog_selfplay 1500` (1845 raw rows). `val=3.1121
+ppl=22.47`.
+
+Checkpoint published as `heclgang/round31tpurealckpt`; eval kernel
+`heclgang/round31evalonly` launched -- decisive test of whether
+format-aware selection lets the flywheel compound safely across a
+second hop.
