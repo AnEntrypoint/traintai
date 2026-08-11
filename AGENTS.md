@@ -4387,3 +4387,44 @@ Checkpoint published as `heclgang/round35tpurealckpt`; eval kernel
 `heclgang/round35evalonly` launched -- decisive test of whether round
 32's 58.65% peak is a real, reproducible property of this recipe or
 partly luck.
+
+## Round 35 real eval result: round 32's 58.65% peak does NOT reproduce -- real variance confirmed even under format-aware selection (2026-08-12)
+
+GPU-only eval kernel (`heclgang/round35evalonly`), full coverage, 133
+real episodes, all 6 games. EXACT reproduction of round 32's recipe
+(self-play from round 31's checkpoint, `--parse-rank-weight 2.0`,
+lr=1.25e-4/steps=600/cap=3000/masking=1), `--seed 12` (fresh, vs round
+32's seed 9).
+
+**Real parse-success rate: 38.46%** (`1 - 9400/15274`) -- substantially
+BELOW round 32's 58.65% (-20.19pp) despite an identical recipe and
+matching training-data row counts (1948 raw rows, exactly matching round
+32). `avg_return` was actually strong (+0.3117, close to round 33's
+best), showing real in-game competence even though parse-success (the
+primary metric) landed much lower this seed.
+
+**Real, corrected conclusion**: round 32's 58.65% was itself
+substantially a lucky draw, not a fully reliable property of "self-play
+from round 31's checkpoint + format-aware selection." This is the SAME
+class of finding as round 15's original 27.02% (later shown to average
+closer to 12-13% across seeds) and confirms format-aware selection
+narrows but does not eliminate real seed-to-seed variance in this
+pipeline. The true expected value of this recipe, based on all data
+points chained from round-31-quality self-play sources under
+format-aware selection, spans a real range of roughly 38-59%
+(round 32: 58.65%, round 35: 38.46%) -- a ~20pp spread from seed alone.
+
+**Final, honest summary of this session's real achievement**: the
+campaign's demonstrated, reproducible improvement is masking (~5-7% ->
+~12-13%, 2-seed confirmed) + LR tuning (-> ~37-41%, each step verified)
++ format-aware self-play (-> high-40s-to-upper-50s%, with real,
+substantial seed variance -- individual runs from 38% to 59% have all
+been observed at essentially the same recipe). The single best
+INDIVIDUAL checkpoint remains `heclgang/round32tpurealckpt` at 58.65%,
+a real, verified eval result -- but it should be described as "the best
+individual run observed" rather than "the reliable output of this
+config," given round 35's real counter-evidence. A rigorous headline
+number for this config, if one number is needed, is closer to the
+~45-50% average of all format-aware-selection runs observed this
+session (30: 48.45%, 31: 52.27%, 32: 58.65%, 33: 56.39%, 34: 46.28%,
+35: 38.46% -- mean ~50.1%) than to the single-run peak.
