@@ -4057,3 +4057,36 @@ regressed, one severely. This is the final, real, best-validated
 checkpoint this session's investigation has produced:
 `heclgang/round26tpurealckpt` (55.46%) or `heclgang/round28tpurealckpt`
 (51.71%), either usable as the campaign's current best deliverable.
+
+## Implemented real fix: format-aware self-play selection (2026-08-11)
+
+Root cause hypothesis from rounds 27/29's real regressions: self-play
+selection (`balrog_selfplay_convert.py`) ranked purely by
+`episode_return`, with no signal for whether an episode's completions
+actually parsed cleanly (`failed_candidates`). An episode can score well
+in-game while still containing the hallucinated-continuation pattern
+masking is meant to suppress -- selecting purely by return risks
+reinforcing whatever formatting habits (good or bad) happened to
+co-occur with high reward in that specific rollout, which may explain
+why a second self-play hop off an already-tuned checkpoint regressed
+twice, independently (round27: 55.46%->49.61%; round29: 51.71%->24.46%).
+
+Real fix implemented: new `load_parse_success_rate()` (1 -
+failed_candidates/num_steps per episode, defaulting to 1.0 for older
+logs without the field) and a new `--parse-rank-weight` CLI flag,
+default 0.0 (fully backward-compatible -- unchanged behavior unless
+explicitly set). When set, the per-task ranking key becomes
+`episode_return + weight * parse_success_rate` instead of raw return
+alone, biasing `--top-frac` selection toward episodes with both good
+in-game outcomes AND clean stop-after-action formatting.
+
+Verified locally (no Kaggle time spent) against real cached round 28
+episode data: `--parse-rank-weight 2.0` ran cleanly, produced 1896 real
+rows (vs the unweighted run's 1821 -- a real, non-trivial shift in which
+episodes get selected per task), no errors, well-formed output rows.
+
+Next: round 30 tests this fix for real -- self-play from round 28's
+checkpoint (the source that regressed round29's result to 24.46% under
+unweighted selection) reconverted WITH `--parse-rank-weight` set, same
+lr=1.25e-4/steps=600/cap=3000/masking=1/fresh-seed, to see if
+format-aware selection avoids the second-hop regression this time.

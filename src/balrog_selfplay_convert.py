@@ -88,6 +88,26 @@ def load_episode_return(json_path):
     return float(log.get("episode_return", 0.0))
 
 
+def load_parse_success_rate(json_path):
+    """1 - failed_candidates/num_steps for one episode, or 1.0 if the log
+    predates this field (no evidence of failure -> don't penalize it).
+    Real root cause found 2026-08-11 (rounds 27/29): iterating self-play
+    a second hop off an already-self-play-tuned checkpoint regresses real
+    parse-success, twice, independently -- ranking by episode_return alone
+    can keep episodes with high in-game reward but a high per-step
+    hallucinated-continuation rate, reinforcing the model's own format
+    drift rather than the general stop-after-action skill. Blending this
+    into selection targets the actual property this campaign optimizes.
+    """
+    with open(json_path, encoding="utf-8") as f:
+        log = json.load(f)
+    num_steps = log.get("num_steps")
+    failed = log.get("failed_candidates")
+    if not num_steps or failed is None:
+        return 1.0
+    return 1.0 - (len(failed) / num_steps)
+
+
 INVALID_ACTION_MARKER = "Your previous output did not contain a valid action."
 INVALID_ACTION_RE = re.compile(re.escape(INVALID_ACTION_MARKER) + r" Defaulted to action: (.*?)\n")
 
@@ -177,6 +197,22 @@ def main():
                           "made real progress' bar). Combines with "
                           "--top-frac (both must pass); unset by default "
                           "so early-training rounds are not empty.")
+    ap.add_argument("--parse-rank-weight", type=float, default=0.0,
+                     help="blend an episode's parse-success rate "
+                          "(1 - failed_candidates/num_steps) into the "
+                          "ranking key alongside episode_return, as "
+                          "rank_key = episode_return + weight * "
+                          "parse_success_rate (parse_success_rate is in "
+                          "[0,1], so this is roughly comparable in scale "
+                          "to episode_return's typical [-1,1] range). "
+                          "0.0 (default) keeps the original return-only "
+                          "ranking; a positive value biases selection "
+                          "toward episodes with cleaner stop-after-action "
+                          "formatting, not just higher in-game reward --"
+                          "the real lever candidate raised after rounds "
+                          "27/29 showed iterating self-play a second hop "
+                          "off return-only selection regresses parse "
+                          "success.")
     args = ap.parse_args()
 
     seq_len = args.seq_len if args.seq_len is not None else Config().seq_len
@@ -199,15 +235,18 @@ def main():
             for csv_path, json_path in pairs:
                 task = task_of(args.results_dir, env_name, json_path)
                 episode_return = load_episode_return(json_path)
-                by_task.setdefault(task, []).append((episode_return, csv_path, json_path))
+                rank_key = episode_return
+                if args.parse_rank_weight:
+                    rank_key += args.parse_rank_weight * load_parse_success_rate(json_path)
+                by_task.setdefault(task, []).append((episode_return, rank_key, csv_path, json_path))
 
             selected = []
             for task, episodes in by_task.items():
-                episodes.sort(key=lambda e: e[0], reverse=True)
+                episodes.sort(key=lambda e: e[1], reverse=True)
                 n_keep = max(1, round(len(episodes) * args.top_frac))
                 selected.extend(episodes[:n_keep])
 
-            for episode_return, csv_path, json_path in selected:
+            for episode_return, _rank_key, csv_path, json_path in selected:
                 if capped:
                     break
                 if args.min_return is not None and episode_return <= args.min_return:
