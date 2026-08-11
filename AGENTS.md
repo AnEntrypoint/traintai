@@ -4196,3 +4196,11 @@ genuinely better teacher for the next round without the drift that
 regressed unweighted selection. Round 32 should continue the flywheel
 (self-play from round 31's 52.27% checkpoint) to test whether the
 positive compounding continues for a third hop.
+
+## Round 32 launched: flywheel hop 3 (2026-08-11)
+
+Self-play from round 31's checkpoint (52.27%, campaign best), format-
+aware selection (`--parse-rank-weight 2.0`), `--seed 9`. Tests whether
+the positive compounding (round30->31: +3.82pp) continues for a third
+hop, confirming the flywheel is a genuinely sustained improvement loop
+rather than a one-time correction.
