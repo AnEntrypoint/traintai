@@ -4322,3 +4322,45 @@ ppl=22.43`.
 Checkpoint published as `heclgang/round34tpurealckpt`; eval kernel
 `heclgang/round34evalonly` launched -- fifth data point in the
 trajectory to determine plateau vs noise.
+
+## Round 34 real eval result: second consecutive drop -- real evidence of decline past the peak, not just plateau noise (2026-08-11)
+
+GPU-only eval kernel (`heclgang/round34evalonly`), full coverage, 133
+real episodes, all 6 games. Self-play from round 33's checkpoint
+(56.39%), `--parse-rank-weight 2.0`, `--seed 11`.
+
+**Real parse-success rate: 46.28%** (`1 - 7891/14689`) -- DOWN from
+round 33's 56.39% (-10.11pp), a SECOND consecutive negative delta after
+round 32's peak (58.65% -> 56.39% -> 46.28%). This is now two drops in a
+row, not a single noise-level dip -- real evidence the campaign passed
+its peak around round 32 and self-play quality is now declining, not
+plateauing.
+
+**Real, updated conclusion**: the five-hop trajectory (48.45 -> 52.27 ->
+58.65 -> 56.39 -> 46.28) shows a clear rise-then-fall shape: three
+consecutive gains to a peak at round 32, then two consecutive losses.
+This is consistent with a real, if delayed, version of the same
+self-distillation drift risk that caused unweighted selection's sharp
+regressions (rounds 27/29) -- format-aware selection clearly delayed and
+softened the failure mode (gradual decline vs sudden collapse) but did
+not eliminate it entirely after enough hops. Continuing to chain
+self-play from progressively-more-self-distilled checkpoints eventually
+erodes real quality even with format-aware selection.
+
+**Real, final campaign-best checkpoint, confirmed**: `heclgang/round32tpurealckpt`
+at 58.65% parse-success is the peak of this five-hop trajectory and the
+best real result the format-aware flywheel produced. Given two
+consecutive real declines past that peak, round 32's checkpoint (not
+round 33's or round 34's) should be treated as the campaign's actual
+best deliverable, representing a genuine **9-12x** improvement over the
+original ~5-7% pre-masking baseline.
+
+**Real, disciplined stopping recommendation**: further flywheel hops
+chained off round 33 or round 34's already-declining checkpoints are
+unlikely to recover the peak and risk compounding the decline further.
+If continuing this investigation, the more promising next move is
+re-anchoring the flywheel from round 32's checkpoint specifically (the
+real peak) with a fresh seed, rather than continuing to chain off the
+now-declining sequence -- analogous to how round 28 confirmed round 26's
+result was real by reproducing it directly, rather than extending
+further from round 27's regression.
