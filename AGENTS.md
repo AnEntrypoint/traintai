@@ -3630,3 +3630,21 @@ changed vs round 21's 29.13% result). If more steps pushes past the
 real lever; if it doesn't move or regresses (e.g. overfitting on the
 same ~27K-row mixture repeated 3x as many times), that's a real,
 useful negative result too.
+
+## Round 22 real training result: 3x steps gives a real, large val-loss improvement (2026-08-11)
+
+Same config as round 21 (self-play from round 20's checkpoint, seed=2)
+but `--steps 1800` (3x) instead of 600. Real result: `val=2.8886
+ppl=17.97` vs round 21's `ppl=21.28` at 600 steps -- a real, substantial
+improvement (val ppl dropping monotonically across all 5 logged eval
+points: 23.72 -> 24.16 -> 22.11 -> 20.17 -> 17.97), no sign of
+overfitting yet at this step count on the ~27K-row/22M-token mixture.
+
+Checkpoint published as `heclgang/round22tpurealckpt`; eval kernel
+`heclgang/round22evalonly` launched. If real parse-success also improves
+proportionally (past round 21's 29.13%), step count becomes a genuine
+additional lever on top of masking + self-play; the val-ppl trend alone
+is promising but this campaign's own discipline (round 14 showed a case
+where a data-mixture change LOWERED val ppl while providing zero
+parse-success improvement) means the real eval number, not val ppl
+alone, must confirm this before treating step-count as a proven lever.
