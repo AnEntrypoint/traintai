@@ -581,18 +581,33 @@ def main():
                 else:
                     stats[env_name]["skipped"] += 1
 
+    # Real finding (2026-08-12): under strict round-robin, once a small
+    # game's raw pool (e.g. babaisai's real available trajectories) is
+    # exhausted, it simply stops contributing while games with larger
+    # raw pools keep filling the cap -- so a game's real SHARE of the
+    # final mixture is bounded by its raw pool size, not given an equal
+    # target share. Direct evidence: babaisai ended up only 349/20000
+    # rows (1.7%) in a real converted balrog_demos.jsonl, and BALROG's
+    # own real eval logs show babaisai's failed_candidates are almost
+    # entirely compass-direction/verb confusion with the OTHER games'
+    # much-more-represented action vocabularies (north/south/east/west/
+    # "go forward" instead of babaisai's real up/down/left/right) --
+    # consistent with the model rarely seeing babaisai's distinct action
+    # set during training. Fixed by wrapping (cycling) each game's rows
+    # once its pool is exhausted, so every game with at least 1 real row
+    # gets an equal target SHARE of the cap (repeating its own rows if
+    # needed), not just an equal share of what's naturally available.
     total_rows = 0
     with open(args.out, "w", encoding="utf-8") as f:
         indices = {env: 0 for env in ENVS}
-        while total_rows < args.cap:
+        active_envs = [env for env in ENVS if per_game_rows[env]]
+        while total_rows < args.cap and active_envs:
             wrote_any = False
-            for env_name in ENVS:
+            for env_name in active_envs:
                 if total_rows >= args.cap:
                     break
                 rows = per_game_rows[env_name]
-                i = indices[env_name]
-                if i >= len(rows):
-                    continue
+                i = indices[env_name] % len(rows)
                 f.write(json.dumps({"text": rows[i]}) + "\n")
                 indices[env_name] += 1
                 total_rows += 1

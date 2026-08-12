@@ -4546,3 +4546,54 @@ kernel template -- the old `=8` default undersamples these games badly
 enough to swing the aggregate parse-success number by double digits of
 percentage points round to round, as demonstrated concretely by round
 36 vs round 32's measurement of the IDENTICAL checkpoint.
+
+## Real bug found and fixed via local processing: BabaIsAI action-vocabulary confusion from severe under-representation (2026-08-12)
+
+While waiting on round 37's Kaggle result, used local processing on
+round 36's real cached episode data to investigate babaisai's
+consistently near-zero parse-success (2.62% at round 36's larger
+sample). Direct inspection of `failed_candidates` for a real babaisai
+episode showed EVERY failed completion was a compass direction
+(`north`/`south`/`east`/`west`) or BabyAI-style verb (`go forward`) --
+never babaisai's real action vocabulary (`up`/`down`/`left`/`right`,
+confirmed correct in `src/balrog_demo_convert.py:_BABAISAI_ACTIONS` and
+in real converted training rows, which correctly end `assistant: up` /
+`assistant: left` etc).
+
+**Real root cause, found by counting actual training-mixture
+composition** (`round35-tpu-real/output/balrog_demos_fixed.jsonl`,
+20,000 real rows): babaisai is only 349 rows (1.7%) and babyai only 340
+rows (1.7%) of the demo mixture -- both these games' real, distinct
+action vocabularies are so underrepresented that the model has
+essentially no training signal to distinguish them from
+minihack/nle/textworld's compass-direction convention, which dominates
+the mixture by raw volume.
+
+**Real mechanism confirmed by code read**: `balrog_demo_convert.py`'s
+round-robin write loop (the round-robin FIX from earlier this session)
+distributes writes round-robin, but once a small game's raw pool is
+exhausted it simply STOPS contributing (`if i >= len(rows): continue`)
+while games with larger raw pools keep filling the cap -- so a game's
+real final SHARE of the mixture was bounded by its raw pool size, not
+given an equal target share. babaisai and babyai both have small raw
+demo-trajectory pools available (hundreds, not thousands), so they were
+structurally starved even though the round-robin ORDER was fair.
+
+**Real fix implemented**: `balrog_demo_convert.py`'s write loop now
+wraps (cycles) each game's own rows once its pool is exhausted, instead
+of dropping out -- giving every game with at least 1 real row an equal
+target SHARE of the cap (repeating its own rows as needed). Verified
+locally with a synthetic-pool simulation matching the real observed
+imbalance (babaisai 349/pool, minihack 4000/pool, etc): confirms every
+game now gets ~16.7% of a 20000-row cap (up from babaisai's real 1.7%),
+with babaisai's 349 unique rows repeated ~9.5x to fill its share.
+
+**Next step**: this requires a real ~90min re-conversion run (the raw
+records.zip conversion, not something fixable from cached
+already-converted data) to regenerate `balrog_demos.jsonl` under the
+new balanced logic, then republish as the new `heclgang/balrog-demos-cache`
+dataset for all future rounds to use. This is a real, deliberate,
+isolated single-lever test: does fixing babaisai/babyai's severe
+training-mixture underrepresentation measurably improve their
+near-zero real parse-success rates, independent of anything else this
+session already tested?
