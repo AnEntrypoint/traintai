@@ -4700,3 +4700,37 @@ fix already committed and in-flight in round 38 -- one real code change
 addressing three real, independently-confirmed failure modes via a
 common mechanism (severe training-data underrepresentation), not three
 separate bugs needing three separate fixes.
+
+## Local processing while round 38 runs: quantified nle's residual failure composition, a real secondary lever candidate (2026-08-12)
+
+Further local analysis of round 37's real cached nle episode data
+(1677 total failed_candidates across 24 real episodes) while waiting on
+round 38: quantified the SPLIT within nle's real failures, not just
+confirmed the pattern qualitatively.
+
+**Real breakdown**: 943/1677 (56%) are short compass-direction/verb
+confusion (`'go west'`, `'right'`, `'go north'`, etc -- the SAME root
+cause round 38's mixture-balance fix targets). But 249/1677 (~15%) are
+LONG (>40 char) hallucinated-continuation-style garbage
+(`'south STOP or similar immovable properties\n Think'`, `'purse is
+door You need this place there youre in a fantasy'`) -- text fragments
+that look like they're bleeding in from OTHER games' prompt/tips text
+(the babaisai/crafter prompt strings contain phrases like "STOP or
+similar immovable properties" and "fantasy" almost verbatim -- real
+evidence the model occasionally hallucinates fragments of a DIFFERENT
+game's prompt into its own completion, a cross-game prompt-bleeding
+failure mode distinct from simple vocabulary confusion).
+
+**Real implication**: even if round 38's mixture-balance fix
+successfully resolves the compass/verb-confusion component (~56% of
+nle's failures, and presumably similar for babyai/crafter/babaisai),
+this cross-game prompt-bleeding component (~15%, likely present in
+other games too, not yet separately quantified) is a distinct residual
+issue -- likely related to the model's context window at 512 tokens
+(model.py's Config.seq_len) potentially retaining or confusing text
+across scenario boundaries in the eval harness's rolling-context
+turn structure. Real next lever candidate once round 38 lands: quantify
+this specific failure mode's real contribution across all games (not
+just nle) using the same categorization method, before deciding whether
+it's worth a dedicated fix (e.g. clearer per-game prompt delimiters, or
+context-window management changes).
