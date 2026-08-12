@@ -4650,3 +4650,32 @@ is the ONLY deliberate lever this round changes, isolating its effect.
 Expect a real, longer wall-clock than every round since round 14 (the
 last round to do a raw re-conversion) due to the one-time ~90min
 conversion cost, paid once and cached for future rounds.
+
+## Local processing while round 38 runs: crafter's failure mode also confirmed as a representation/format issue (2026-08-12)
+
+While waiting on round 38's long-running raw re-conversion, used local
+processing on round 36's real cached crafter episode data to check
+whether its near-zero parse-success (0.14%-0.29% across measurements)
+has the same root cause as babaisai.
+
+**Real finding**: crafter's real action vocabulary
+(`src/balrog_demo_convert.py:_CRAFTER_ACTION_DICT`) is capitalized,
+verbose, two-word phrases -- `"Move North"`, `"Move South"`, `"Move
+East"`, `"Move West"`, `"Do"`, `"Sleep"`, `"Place Stone"`, etc -- NOT
+bare lowercase compass words. Direct inspection of a real crafter
+episode's `failed_candidates` (211/211 steps failed in the sampled
+episode) confirms every single failure is a bare `'north'`/`'east'`/
+`'go north'`-style completion, exactly the same failure pattern as
+babaisai -- the model outputs the compass-direction convention it
+learned from the majority of the mixture (minihack/nle/babyai) instead
+of crafter's own distinct, more verbose action format.
+
+**Real mixture composition check**: crafter is 979/20,000 rows (4.9%)
+of the pre-fix `balrog_demos.jsonl` -- underrepresented, though less
+severely than babaisai/babyai (1.7% each). The mixture-balance fix
+already committed and being tested in round 38 (wrap-around sampling,
+~16.7% equal target share per game) will raise crafter's real exposure
+~3.4x along with babaisai/babyai's much larger ~9.8x increase, so round
+38's single test should provide real evidence on whether increased
+representation alone fixes crafter's distinct-vocabulary confusion too,
+without needing a separate dedicated round.
