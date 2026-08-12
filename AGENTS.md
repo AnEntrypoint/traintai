@@ -4638,3 +4638,15 @@ targets. Next real step: run the ~90min raw re-conversion to regenerate
 `heclgang/balrog-demos-cache`, retrain at the proven best config, and
 re-evaluate under this same properly-sampled (24-episode) standard to
 see if babyai/crafter/babaisai's near-zero rates improve.
+
+## Round 38 launched: real test of the mixture-balance fix (2026-08-12)
+
+Real ~90min raw records.zip re-conversion running to regenerate
+balrog_demos.jsonl under the wrap-around fix (every game gets an equal
+~16.7% target share, up from babaisai/babyai's real 1.7% each). Same
+config as round 32 otherwise (self-play from round 31's checkpoint,
+lr=1.25e-4, steps=600, cap=3000, masking=1, seed=9) -- mixture balance
+is the ONLY deliberate lever this round changes, isolating its effect.
+Expect a real, longer wall-clock than every round since round 14 (the
+last round to do a raw re-conversion) due to the one-time ~90min
+conversion cost, paid once and cached for future rounds.
