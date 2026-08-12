@@ -4529,3 +4529,20 @@ generation (larger `--top-frac` pool per task) AND for final quality
 measurement (less noisy aggregate number). This is now the campaign's
 real, established next lever, directly derived from local processing of
 cached data rather than blind Kaggle experimentation.
+
+## Round 37 launched: establishing the corrected, properly-sampled baseline (2026-08-12)
+
+Full re-measurement of round 32's checkpoint (campaign-best individual
+training result) with ALL under-sampled games raised to 24 episodes
+(babaisai, textworld, minihack, nle -- up from 8 each; babyai stays 30,
+crafter stays 15). This establishes the new standard eval config and
+gets the true, properly-sampled parse-success number for this
+campaign's best checkpoint, correcting the small-sample measurement
+noise round 36 confirmed was real.
+
+Going forward, `eval.num_episodes.*=24` (minimum) for babaisai,
+textworld, minihack, nle should be the standard in every future eval
+kernel template -- the old `=8` default undersamples these games badly
+enough to swing the aggregate parse-success number by double digits of
+percentage points round to round, as demonstrated concretely by round
+36 vs round 32's measurement of the IDENTICAL checkpoint.
