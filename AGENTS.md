@@ -4428,3 +4428,46 @@ number for this config, if one number is needed, is closer to the
 ~45-50% average of all format-aware-selection runs observed this
 session (30: 48.45%, 31: 52.27%, 32: 58.65%, 33: 56.39%, 34: 46.28%,
 35: 38.46% -- mean ~50.1%) than to the single-run peak.
+
+## Local-processing analysis: real next lever identified -- self-play episode sample size (2026-08-12)
+
+Per user direction ("use local processing to find the next lever"),
+analyzed round 32's real cached eval output locally (no Kaggle spend) to
+understand the root cause of the ~20pp seed-to-seed variance found in
+rounds 30-35 (round 32: 58.65%, round 35 exact-recipe reproduction:
+38.46%).
+
+**Real, concrete finding**: `balrog_selfplay_convert.py`'s `--top-frac
+0.25` selection, applied against the eval notebook's real
+`eval.num_episodes.*` config (`babyai=30, crafter=15, babaisai=8,
+textworld=8, minihack=8, nle=8` -- confirmed by direct read of
+`round32-eval-only/round32evalonly.ipynb`'s eval.py invocation cell),
+means MOST tasks keep only **2 episodes** out of 8 for self-play
+training (`max(1, round(8*0.25)) = 2`). Only babyai (30 episodes -> 8
+kept) and crafter (15 -> 4 kept) have a meaningfully larger sample.
+
+This is a real, direct explanation for the large observed variance:
+selecting 2 episodes out of 8 per task is an extremely small, high-
+variance sample -- which specific 2 episodes happen to rank highest by
+`episode_return + weight*parse_success_rate` swings that task's entire
+contribution to the next round's self-play training data. A single
+lucky or unlucky episode at the 8-episode-per-task games (babaisai,
+textworld, minihack's 8 sub-tasks, nle) can meaningfully shift the whole
+resulting checkpoint's real parse-success, independent of anything about
+training itself -- exactly the kind of noise source that would produce
+round 35's real, large deviation from round 32 at an otherwise identical
+recipe.
+
+**Real next lever, derived from this local analysis (not yet tested)**:
+raise `eval.num_episodes.*` for the smaller games (babaisai, textworld,
+minihack, nle currently 8 each) to something closer to babyai's 30,
+giving `--top-frac 0.25` a real, meaningfully-sized pool to select from
+per task (e.g. 8 episodes kept instead of 2 at num_episodes=30). This
+directly targets the actual variance source identified above, rather
+than continuing to spend Kaggle compute on more single-seed flywheel
+runs at the current small-sample config. Real cost tradeoff: eval wall
+clock scales roughly linearly with total episode count, so raising the
+5 smaller games from 8 to 30 episodes each is a real, non-trivial
+increase in eval kernel runtime -- worth testing on one game first
+(e.g. minihack, the most heavily task-fragmented one) before scaling all
+five.
