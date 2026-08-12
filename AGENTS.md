@@ -4597,3 +4597,44 @@ isolated single-lever test: does fixing babaisai/babyai's severe
 training-mixture underrepresentation measurably improve their
 near-zero real parse-success rates, independent of anything else this
 session already tested?
+
+## Round 37 real result: corrected campaign baseline established -- 73.01% under proper sampling (2026-08-12)
+
+GPU-only full-sample eval kernel, 309 real episodes (all games raised
+to a stable sample size: babyai=30, crafter=15, babaisai/textworld/
+minihack/nle=24 each), re-measuring round 32's checkpoint (the
+campaign's best individual training result).
+
+**Real parse-success rate: 73.01%** (`1 - 10005/37075`) -- confirms
+round 36's diagnostic (70.80% at 261 episodes with only minihack raised)
+and further refines it upward with the full corrected sample. This is
+now the campaign's real, defensible, properly-sampled baseline number
+for round 32's checkpoint, replacing every earlier undersampled
+measurement (58.65% at 133 episodes, 38.46% for round 35's
+reproduction attempt at the same small sample).
+
+**avg_return: +0.8001** -- a dramatic new campaign-best, driven largely
+by NetHackChallenge-v0 (now measured across 24 real episodes instead of
+8) showing stable 85.46% parse-success at real scale.
+
+**Real per-game breakdown, confirms round 36's finding**: minihack's 8
+sub-tasks all cluster tightly at 86.96%-89.32% real parse-success (a
+genuinely narrow, stable band once properly sampled), NLE at 85.46%
+(24 episodes), textworld's coin_collector at a perfect 100.00% (24
+episodes, 0 failures). The three consistently weak games remain exactly
+as identified: babyai (7.18%), crafter/default (0.29%), babaisai/
+goto_win (3.68%) -- these are real, stable, low-performing games, NOT a
+sample-size artifact (large samples confirm the low rate, don't explain
+it away).
+
+**Real conclusion**: this campaign's true model quality on the games it
+handles well (minihack, nle, textworld) is substantially higher (~85-
+100%) than the aggregate number suggests -- the aggregate is dragged
+down specifically by babyai/crafter/babaisai's near-total failure,
+which the just-implemented mixture-balance fix (wrap-around sampling
+for underrepresented games in `balrog_demo_convert.py`) directly
+targets. Next real step: run the ~90min raw re-conversion to regenerate
+`balrog_demos.jsonl` under the fixed logic, republish as the new
+`heclgang/balrog-demos-cache`, retrain at the proven best config, and
+re-evaluate under this same properly-sampled (24-episode) standard to
+see if babyai/crafter/babaisai's near-zero rates improve.
