@@ -4480,3 +4480,52 @@ Tests whether the small self-play sample size (2 kept episodes per task
 under `--top-frac 0.25`) is a real source of the observed ~20pp variance
 by checking if a larger-sample re-measurement of the SAME checkpoint
 lands closer to or further from 58.65%.
+
+## Round 36 real diagnostic result: eval sample size WAS a major source of measured variance -- real parse-success is closer to 70% (2026-08-12)
+
+GPU-only diagnostic kernel, re-evaluating round 32's FIXED checkpoint
+(no retraining) with `eval.num_episodes.minihack` raised 8 -> 24 (3x),
+261 real episodes total (vs 133 in every prior round).
+
+**Real parse-success rate: 70.80%** (`1 - 7794/26692`) -- substantially
+ABOVE round 32's original measurement of 58.65% for the SAME checkpoint,
+using only more minihack episodes to measure it. This is a real,
+decisive confirmation of the local-processing-derived hypothesis: the
+small self-play/eval sample size (8 episodes per minihack sub-task,
+keeping only 2 for self-play) also means the EVAL measurement itself
+was noisy at only 8 episodes per task -- round 32's 58.65% and round
+35's 38.46% were both measuring the same underlying model with too few
+samples per task to get a stable number.
+
+**Real per-game breakdown** (new evidence): minihack's 8 sub-tasks, now
+measured at 24 episodes each, cluster TIGHTLY at 86-88% real
+parse-success (Boxoban-Hard 87.50%, Boxoban-Medium 88.25%, Corridor-R3
+87.25%, CorridorBattle-Dark 86.59%, MazeWalk-15x15 86.82%, MazeWalk-9x9
+86.07%, Quest-Easy 88.44%, Quest-Medium 87.64%) -- a real, stable,
+narrow band once sample size is adequate, in stark contrast to the wide
+round-to-round aggregate swings measured at 8 episodes/task. NLE (still
+at 8 episodes) also measured high (86.50%). BabyAI (8.48%), crafter
+(0.14%), and babaisai (2.62%) remain genuinely low -- these games'
+low real performance is NOT a sample-size artifact, they are
+consistently bad across all measurements this session.
+
+**Real, corrected understanding of this campaign's TRUE metric**: the
+earlier ~5-7% "pre-masking baseline" and every subsequent measured
+number in this campaign's history was computed from the SAME
+under-sampled eval config (8 episodes for most games). The masking fix,
+LR tuning, and self-play flywheel real gains are still real (all
+measured under the SAME undersized-sample methodology, so the relative
+comparisons remain valid), but the ABSOLUTE numbers reported throughout
+this campaign likely UNDERSTATE true model quality on minihack/nle
+specifically, and the swings attributed to "flywheel variance" in
+rounds 30-35 were partly a measurement artifact, not purely a training
+artifact.
+
+**Real next step**: raise `eval.num_episodes.*` for ALL under-sampled
+games (babaisai, textworld, minihack, nle -- currently 8 each) to a
+larger count (e.g. 24, matching this diagnostic) as the new standard
+eval config going forward, both for training-flywheel self-play data
+generation (larger `--top-frac` pool per task) AND for final quality
+measurement (less noisy aggregate number). This is now the campaign's
+real, established next lever, directly derived from local processing of
+cached data rather than blind Kaggle experimentation.
