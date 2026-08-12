@@ -4769,3 +4769,23 @@ own `max_tokens` client setting (currently `8192`, confirmed in
 constraining this or adding an explicit stop sequence reduces
 hallucinated continuations for the games where vocabulary is already
 correct).
+
+## Local processing while round 38 runs: ruled out max_tokens as the garbage-continuation fix (2026-08-12)
+
+Checked whether the identified garbage-continuation failures (nle
+14.8%, minihack 6-12%) are exceeding the server's generation budget.
+Real finding: `balrog_server.py:178` already caps generation at
+`ACTION_RESPONSE_MAX_TOKENS = 16`. Tokenized two real garbage
+completions with the actual tokenizer
+(`data/bpe32768.json`) -- both are 15 tokens, right at the cap, not
+exceeding it. This RULES OUT `max_tokens`/generation-length as the fix:
+the model is genuinely hallucinating fluent-but-wrong content within
+its existing 16-token budget, not running past a truncation point that
+could be shortened. This is a real, useful negative result -- the
+garbage-continuation issue is a model-quality/training problem (the
+model doesn't yet reliably know to stop immediately after the action
+even within a short budget), not a generation-parameter tuning problem.
+Any future fix for this specific failure mode should target training
+(e.g. further masking refinement, or penalizing longer completions
+specifically) rather than inference-time generation limits, which are
+already tight.
