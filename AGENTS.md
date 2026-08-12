@@ -4679,3 +4679,24 @@ already committed and being tested in round 38 (wrap-around sampling,
 38's single test should provide real evidence on whether increased
 representation alone fixes crafter's distinct-vocabulary confusion too,
 without needing a separate dedicated round.
+
+## Local processing while round 38 runs: babyai confirmed as the same root-cause pattern (2026-08-12)
+
+Third confirmation via local processing of round 37's real cached data:
+babyai's failures (56/64 in the sampled episode) are ALSO exclusively
+compass-direction/wrong-vocabulary completions (`'go south'`, `'north'`,
+`'go east'`, etc.) instead of babyai's real action set (`turn left`,
+`turn right`, `go forward`, `pick up`, `drop`, `toggle`,
+`src/balrog_demo_convert.py:_BABYAI_ACTIONS`). This is the SAME
+failure pattern as babaisai and crafter -- all three weak games share
+one real root cause: the model defaults to the compass-direction
+convention that dominates the training mixture (minihack/nle, which are
+individually much larger raw pools) instead of learning each
+underrepresented game's own distinct vocabulary.
+
+All three (babyai 1.7%, crafter 4.9%, babaisai 1.7% of the pre-fix
+20,000-row mixture) are directly targeted by the single mixture-balance
+fix already committed and in-flight in round 38 -- one real code change
+addressing three real, independently-confirmed failure modes via a
+common mechanism (severe training-data underrepresentation), not three
+separate bugs needing three separate fixes.
