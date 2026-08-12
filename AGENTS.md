@@ -4845,3 +4845,34 @@ TPU slot; waiting for it to complete (or fail/timeout on Kaggle's own
 side) is the only real option. No cancel/delete action was taken
 (would require explicit user authorization for a potentially-still-
 succeeding real training run).
+
+## Local processing: precisely quantified BALROG's real share of the total training mixture (2026-08-12)
+
+From round 32's own real printed mixture composition (`total output
+rows: ... balrog_demos 3000 | balrog_selfplay 1500 ... total 27635`):
+BALROG rows are **4500/27635 = 16.3%** of the total training mixture --
+the remaining 83.7% is NPC-dialog/general-text content (real 3649,
+world 900, sim 2870, pippa 1457, forge 2500, chains 241, kaggle_fantasy/
+wiki/gamearena/werewolf 5492 combined, template 6000, plus 4.0M
+TinyStories tokens appended separately).
+
+This precisely quantifies the earlier local-processing finding (garbage
+continuations bleeding NPC-dialog content): even with masking correctly
+concentrating loss-weight on BALROG rows' completion tokens, and even
+with the mixture-balance fix correctly balancing BALROG's INTERNAL game
+representation, BALROG as a whole remains a real structural minority
+(16.3%) of what the model sees overall. A model trained 83.7% on
+dialogue/narrative continuation naturally has a strong prior toward
+continuing in that style, which shows up as the observed ~7-15%
+garbage-continuation tail on games where BALROG's own vocabulary is
+otherwise well-learned (nle, minihack).
+
+**Real next-lever candidate for AFTER round 38 confirms the mixture-
+balance fix**: raise `BALROG_DEMOS_CAP`/`BALROG_SELFPLAY_CAP` again --
+this was refuted twice before (round 14 pre-masking, round 16
+post-masking-but-pre-balance-fix), but BOTH refutations happened under
+configs that did NOT yet have the mixture-balance fix. Retesting the
+cap increase specifically AFTER round 38 confirms per-game balance is
+fixed is a genuinely different, not-yet-tested configuration -- the
+combination of balanced-internal-representation AND higher overall
+BALROG share has never been tested together.
