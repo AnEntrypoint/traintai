@@ -4789,3 +4789,44 @@ Any future fix for this specific failure mode should target training
 (e.g. further masking refinement, or penalizing longer completions
 specifically) rather than inference-time generation limits, which are
 already tight.
+
+## Local processing while round 38 runs: garbage-continuation content traced to NPC-dialog training data, not other BALROG games (2026-08-12)
+
+Refined the garbage-continuation analysis by reading the actual real
+text content of 249 nle long-failure samples, not just their length.
+**Real, more precise finding**: the hallucinated continuations don't
+just look like generic garbage -- they contain recognizable NPC-dialog-
+style content (`'Lilys shop you can still find the stones'`,
+`'Personality:'`, `'organizations and she keeps me'`, `'pay double for
+anything'`, `'She is holding'`) -- this is NOT bleeding from other
+BALROG games' prompts (my earlier hypothesis), it's bleeding from the
+mixture's much larger NPC-dialog sources (`world`, `sim`, `pippa`,
+`forge`, `action_forge` -- confirmed present in st_prepare.py's mixture,
+collectively far larger than the entire BALROG demo+selfplay share even
+after the mixture-balance fix).
+
+**Real, corrected understanding**: this is a genuine competing-context
+problem, not a BALROG-internal vocabulary issue -- the model has learned
+a strong "continue with shop/dialogue text" prior from the numerically-
+dominant NPC-dialog portion of the mixture, and BALROG rows (even with
+perfect masking and balanced game representation) are still a minority
+of the OVERALL training mixture by row count (`balrog_demos` 3000 +
+`balrog_selfplay` up to 1500 out of a 27000+-row total mixture,
+per st_prepare.py's real printed composition every round this session).
+This explains why even nle/minihack's otherwise-strong ~85-89%
+parse-success still has a real ~7-15% failure tail: on the rare step
+where the model's completion drifts, it drifts toward its LARGER,
+numerically-dominant training prior (NPC dialogue), not toward BALROG
+formatting specifically.
+
+**Real next lever candidate, more precise than the earlier max_tokens
+hypothesis**: this may not be cheaply fixable via BALROG-side changes
+alone -- it's a real competing-objective tension between the NPC-dialog
+half of this project's mission and the BALROG-agent half. Worth
+testing once round 38 lands: does the SAME mixture-balance fix (more
+balanced BALROG game representation) also incidentally raise the
+BALROG_DEMOS_CAP's effective share of the overall mixture enough to
+measurably reduce this NPC-dialog-drift rate, or is a dedicated lever
+(e.g. raising BALROG_DEMOS_CAP again, now retested under the CURRENT
+masking+LR-tuned+balanced-mixture config, unlike its earlier refuted
+attempts under different configs) needed as a distinct follow-up.
