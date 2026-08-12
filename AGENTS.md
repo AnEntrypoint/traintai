@@ -4830,3 +4830,18 @@ measurably reduce this NPC-dialog-drift rate, or is a dedicated lever
 (e.g. raising BALROG_DEMOS_CAP again, now retested under the CURRENT
 masking+LR-tuned+balanced-mixture config, unlike its earlier refuted
 attempts under different configs) needed as a distinct follow-up.
+
+## Real finding: Kaggle enforces max 1 concurrent TPU session, confirms round 38 is genuinely occupying the slot (2026-08-12)
+
+Attempted to launch a parallel retry kernel (round 38b, with a
+hardened/timeout-wrapped gdown download) while round 38 was still
+running past its historical ~90min precedent with no CLI-visible
+progress signal. Real, decisive error from `kaggle kernels push`:
+`Maximum batch TPU session count of 1 reached.` This CONFIRMS round 38
+is a real, live, resource-holding session on Kaggle's infrastructure --
+not a zombie/already-dead kernel silently reporting stale RUNNING
+status. There is no parallel-testing path available while it holds the
+TPU slot; waiting for it to complete (or fail/timeout on Kaggle's own
+side) is the only real option. No cancel/delete action was taken
+(would require explicit user authorization for a potentially-still-
+succeeding real training run).
