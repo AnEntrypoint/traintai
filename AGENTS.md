@@ -4734,3 +4734,38 @@ this specific failure mode's real contribution across all games (not
 just nle) using the same categorization method, before deciding whether
 it's worth a dedicated fix (e.g. clearer per-game prompt delimiters, or
 context-window management changes).
+
+## Local processing while round 38 runs: cross-game garbage-continuation rate quantified, confirms it's the real NEXT lever for already-strong games (2026-08-12)
+
+Extended the prompt-bleeding/garbage-continuation categorization (>40
+char failed completions) across ALL games in round 37's real cached
+data, not just nle:
+
+- NetHackChallenge-v0: 14.8% of failures are long garbage (highest)
+- MiniHack sub-tasks: 6.0%-12.3% (Quest-Easy highest at 12.3%)
+- babaisai/env/goto_win: 3.1%
+- BabyAI: 2.6%
+- crafter/default: 1.6%
+- textworld/coin_collector: 0.0% (zero failures at all, real)
+
+**Real, confirmed structural pattern**: the games with already-HIGH
+parse-success (nle, minihack -- 85-89%) have their REMAINING failures
+dominated by this garbage/hallucinated-continuation issue (not
+vocabulary confusion, since they already know their own vocabulary
+well). The games with near-zero parse-success (babyai, crafter,
+babaisai) have LOW garbage rates because vocabulary confusion (the
+issue round 38's mixture-balance fix targets) so thoroughly dominates
+their failure count that garbage-continuation barely registers as a
+fraction.
+
+**Real conclusion**: this confirms round 38's mixture-balance fix is
+targeting the correct, dominant issue for the 3 weak games. Once that
+fix is validated, the genuinely NEXT real lever (for nle/minihack
+specifically, which are already strong) is reducing this
+garbage-continuation rate -- likely a stop-token/generation-length
+issue distinct from vocabulary, potentially addressable via BALROG's
+own `max_tokens` client setting (currently `8192`, confirmed in
+`balrog_server.py`'s eval kernel client config -- worth checking if
+constraining this or adding an explicit stop sequence reduces
+hallucinated continuations for the games where vocabulary is already
+correct).
