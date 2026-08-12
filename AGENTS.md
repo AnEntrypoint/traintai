@@ -4471,3 +4471,12 @@ clock scales roughly linearly with total episode count, so raising the
 increase in eval kernel runtime -- worth testing on one game first
 (e.g. minihack, the most heavily task-fragmented one) before scaling all
 five.
+
+## Round 36 launched: real eval-sample-size diagnostic (2026-08-12)
+
+Re-evaluating round 32's FIXED checkpoint (58.65%, no retraining) with
+`eval.num_episodes.minihack` raised 8 -> 24, GPU-only diagnostic kernel.
+Tests whether the small self-play sample size (2 kept episodes per task
+under `--top-frac 0.25`) is a real source of the observed ~20pp variance
+by checking if a larger-sample re-measurement of the SAME checkpoint
+lands closer to or further from 58.65%.
