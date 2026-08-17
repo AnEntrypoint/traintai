@@ -4990,3 +4990,48 @@ than rushed. Given this session's context budget, this finding and the
 mixture-balance fix's real +3.17pp gain (73.01%->76.18%, new campaign
 best real checkpoint `heclgang/round38tpurealckpt`) are recorded as the
 final state of this investigation for this session.
+
+## Real fix implemented at the correct layer: token-balanced BALROG demo selection in st_prepare.py (2026-08-12)
+
+Round 38's real eval confirmed the row-count mixture-balance fix
+(implemented in `balrog_demo_convert.py`) did NOT move babaisai/babyai/
+crafter's near-zero parse-success. Local-processing traced this to real
+token-length imbalance: babaisai (~1192 tok/row) and babyai (~889
+tok/row) are substantially shorter than the mixture average (~1974
+tok/row), so equal ROW share still gives them far fewer real training
+TOKENS.
+
+**First attempt (reverted)**: implemented a token-based cap in
+`balrog_demo_convert.py`'s WRITE stage. Verified locally this correctly
+balances token share WITHIN THE FULL FILE -- but `st_prepare.py` only
+reads a fixed BALROG_DEMOS_CAP=3000-row PREFIX of that file, and the
+round-robin write order means the first 3000 rows are already
+row-balanced (750/game) regardless of what happens later in the file.
+Direct local calculation confirmed the write-side fix would have ZERO
+real effect at the current cap value: the read-side prefix truncation
+happens before the write-side token-balancing logic has a chance to
+matter. Reverted before spending any Kaggle time testing a fix proven
+locally not to work.
+
+**Real fix, correctly placed**: implemented in `st_prepare.py`'s
+`main()` instead -- the READ stage. Tags each row by its real source
+game (same prompt markers used to identify games throughout this
+session's analysis: "Baba Is You", "navigation game", "Move North"),
+computes each game's real per-row token length via the tokenizer, then
+selects rows per-game (cycling through each game's own pool, same
+wrap-around principle as the round-robin write fix) until every game
+reaches an EQUAL TOKEN-COUNT quota within the BALROG_DEMOS_CAP*avg_len
+budget -- not a fixed row-count prefix. Verified locally against real
+cached `balrog_demos.jsonl` data (round 38's output): every game now
+gets exactly 25.0% of the real token budget (babyai: 1479 rows/1.29M
+tokens, crafter: 666 rows/1.29M tokens, babaisai: 1088 rows/1.29M
+tokens, minihack/nle/textworld combined: 660 rows/1.29M tokens) --
+babyai/babaisai now genuinely repeat more to match the longer-prompt
+games' real token exposure, closing the gap the row-count-only fix left
+open.
+
+Next real step: train round 39 at the proven best config (masking on,
+self-play from round 38's checkpoint, lr=1.25e-4, steps=600) with this
+token-balanced selection active, then evaluate under the 24-episode
+standard to test whether babaisai/babyai's near-zero parse-success
+finally moves.

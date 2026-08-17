@@ -270,16 +270,74 @@ def main():
                 if n_kaggle_werewolf >= KAGGLE_WEREWOLF_CAP:
                     break
 
+    # Real finding (2026-08-12): reading the first BALROG_DEMOS_CAP rows
+    # of balrog_demos.jsonl as a flat prefix looked balanced by ROW count
+    # (balrog_demo_convert.py's round-robin write means the first N rows
+    # cycle evenly through every game), but babaisai (avg ~1192 tokens/
+    # row) and babyai (avg ~889 tokens/row) are real, substantially
+    # shorter than minihack/nle (avg ~1974 tokens/row) -- so an
+    # equal-ROW prefix still gives babyai/babaisai ~45-55% FEWER real
+    # training TOKENS than minihack/nle, even though row counts match.
+    # Round 38's real eval confirmed this: the round-robin row-balance
+    # fix alone did NOT move babaisai/babyai's near-zero parse-success
+    # (a token-level cap tested in balrog_demo_convert.py's WRITE stage
+    # was found not to help either, since st_prepare.py's fixed-size
+    # row-count prefix read never reaches deep enough into the file to
+    # benefit from write-side token balancing -- the read side must fix
+    # this directly). Fixed here: tag each row by its source game (using
+    # the same real prompt markers balrog_demo_convert.py's own
+    # instruction_prompt_for() emits), then select per-game until each
+    # game reaches an equal token-count quota within the overall
+    # BALROG_DEMOS_CAP*avg_row_len token budget, not a fixed row-count
+    # prefix -- so babyai/babaisai get written MORE times (more
+    # repetition of their smaller real raw pools) to match minihack/
+    # nle's real per-game token exposure.
+    BALROG_GAME_MARKERS = [
+        ("babaisai", "Baba Is You"),
+        ("babyai", "navigation game"),
+        ("crafter", "Move North"),
+    ]
+
+    def _balrog_game_of(text):
+        for name, marker in BALROG_GAME_MARKERS:
+            if marker in text:
+                return name
+        return "minihack_nle_textworld"
+
     n_balrog_demos = 0
     balrog_demos = []
     balrog_demos_path = os.path.join(NPC, "balrog_demos.jsonl")
-    if os.path.exists(balrog_demos_path):
-        for row in read_jsonl(balrog_demos_path):
-            if clean(row["text"]):
-                balrog_demos.append(row["text"])
-                n_balrog_demos += 1
-                if n_balrog_demos >= BALROG_DEMOS_CAP:
+    if os.path.exists(balrog_demos_path) and BALROG_DEMOS_CAP > 0:
+        all_demo_rows = [row["text"] for row in read_jsonl(balrog_demos_path) if clean(row["text"])]
+        if all_demo_rows:
+            by_game = {}
+            for text in all_demo_rows:
+                by_game.setdefault(_balrog_game_of(text), []).append(text)
+            _tok_bulk = _bulk_encoder(tok)
+            game_lens = {g: [len(e) for e in _tok_bulk(rows)] for g, rows in by_game.items()}
+            avg_row_len = sum(n for lens in game_lens.values() for n in lens) / len(all_demo_rows)
+            token_budget = BALROG_DEMOS_CAP * avg_row_len
+            per_game_budget = token_budget / len(by_game)
+            indices = {g: 0 for g in by_game}
+            tokens_written = {g: 0 for g in by_game}
+            active = list(by_game.keys())
+            while active and n_balrog_demos < BALROG_DEMOS_CAP * len(by_game):
+                wrote_any = False
+                for g in list(active):
+                    rows, lens = by_game[g], game_lens[g]
+                    if tokens_written[g] >= per_game_budget:
+                        active.remove(g)
+                        continue
+                    i = indices[g] % len(rows)
+                    balrog_demos.append(rows[i])
+                    tokens_written[g] += lens[i]
+                    indices[g] += 1
+                    n_balrog_demos += 1
+                    wrote_any = True
+                if not wrote_any:
                     break
+            print(f"  balrog_demos token-balanced selection: "
+                  + ", ".join(f"{g}={indices[g]}rows/{tokens_written[g]}tok" for g in by_game))
 
     n_balrog_selfplay = 0
     balrog_selfplay = []
