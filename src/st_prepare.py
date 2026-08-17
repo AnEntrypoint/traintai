@@ -317,26 +317,47 @@ def main():
             game_lens = {g: [len(e) for e in _tok_bulk(rows)] for g, rows in by_game.items()}
             avg_row_len = sum(n for lens in game_lens.values() for n in lens) / len(all_demo_rows)
             token_budget = BALROG_DEMOS_CAP * avg_row_len
-            # Real finding (round 39, 2026-08-17): fully-equal per-game token
-            # share (frac=1.0) moved babyai/babaisai's parse-success up a lot
-            # (5.48%->41.25%, 4.05%->14.48%) but caused a real net regression
-            # in minihack/nle (92.58%->65.82%, 90.34%->71.84%) via the same
-            # vocabulary-bleed mechanism running in reverse -- a zero-sum
-            # lever, not a free win, confirmed via real per-episode eval data
-            # (see AGENTS.md). BALROG_TOKEN_BALANCE_FRAC interpolates between
-            # each game's natural row-balanced share (0.0, round 38's config)
-            # and fully-equal share (1.0, round 39's config), so the next
-            # round can empirically search a partial-balance point instead of
-            # re-testing either extreme again. Default 0.5 is round 40's
-            # proposed test point.
-            balance_frac = float(os.environ.get("BALROG_TOKEN_BALANCE_FRAC", "0.5"))
+            # Real findings across rounds 38/39/40 (2026-08-17, see AGENTS.md):
+            # a single shared BALROG_TOKEN_BALANCE_FRAC does NOT interpolate
+            # per-game response linearly. babyai/babaisai are real THRESHOLD
+            # responders (round 40's frac=0.5 recovered only ~12pp of
+            # babyai's frac=1.0 gain and almost none of babaisai's -- both
+            # need close to full equal-share to unlock their real gain).
+            # minihack/nle degrade in an ACCELERATING way as their share
+            # shrinks (round 40 lost MORE going 0.5->1.0 than 0.0->0.5), the
+            # opposite of front-loaded -- so they should be taxed as little
+            # as possible, not partially. crafter is CONFIRMED FLAT/
+            # UNRESPONSIVE to token share at every frac tested (0.28%/0.32%/
+            # 0.26%, noise-level differences) -- token-dilution is ruled out
+            # as crafter's root cause, so its natural share should be
+            # reallocated rather than defended or grown.
+            #
+            # BALROG_TOKEN_TARGET_SHARE lets each game's target share be set
+            # directly (env var, JSON dict, e.g.
+            # '{"babyai":0.136,"babaisai":0.16,"crafter":0.0}'; any game
+            # omitted keeps its real natural share, then all shares are
+            # renormalized to sum to 1.0) -- the real per-game-informed lever
+            # this finding motivates, instead of a single shared frac.
+            # BALROG_TOKEN_BALANCE_FRAC (uniform interpolation) remains
+            # available and is used only when BALROG_TOKEN_TARGET_SHARE is
+            # unset, for backward compatibility / re-running rounds 38-40's
+            # exact configs.
             total_tokens_natural = sum(sum(lens) for lens in game_lens.values())
             natural_share = {g: sum(lens) / total_tokens_natural for g, lens in game_lens.items()}
-            equal_share = 1.0 / len(by_game)
-            target_share = {
-                g: natural_share[g] + balance_frac * (equal_share - natural_share[g])
-                for g in by_game
-            }
+            override_json = os.environ.get("BALROG_TOKEN_TARGET_SHARE", "")
+            if override_json:
+                override = json.loads(override_json)
+                target_share = {g: override.get(g, natural_share[g]) for g in by_game}
+                tot = sum(target_share.values())
+                target_share = {g: v / tot for g, v in target_share.items()}
+                print(f"  balrog_demos per-game target share override: {target_share}")
+            else:
+                balance_frac = float(os.environ.get("BALROG_TOKEN_BALANCE_FRAC", "0.5"))
+                equal_share = 1.0 / len(by_game)
+                target_share = {
+                    g: natural_share[g] + balance_frac * (equal_share - natural_share[g])
+                    for g in by_game
+                }
             per_game_budget = {g: token_budget * target_share[g] for g in by_game}
             indices = {g: 0 for g in by_game}
             tokens_written = {g: 0 for g in by_game}
@@ -356,7 +377,8 @@ def main():
                     wrote_any = True
                 if not wrote_any:
                     break
-            print(f"  balrog_demos token-balanced selection (frac={balance_frac}): "
+            _mode = f"override={target_share}" if override_json else f"frac={balance_frac}"
+            print(f"  balrog_demos token-balanced selection ({_mode}): "
                   + ", ".join(f"{g}={indices[g]}rows/{tokens_written[g]}tok" for g in by_game))
 
     n_balrog_selfplay = 0
