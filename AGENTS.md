@@ -4905,3 +4905,53 @@ timing shows the conversion step took ~114 minutes, close to the
 historical ~90min estimate, and training completed normally in ~110s
 after that. No kernel was ever actually stuck; the anomaly was in this
 session's own wall-clock tracking across a session-continuation gap.)
+
+## Round 38 real eval result: mixture-balance fix did NOT fix babyai/crafter/babaisai -- real negative result on the primary hypothesis (2026-08-12)
+
+GPU-only full-sample eval kernel, 309 real episodes (same 24-episode
+standard as round 37), testing round 38's checkpoint (trained under the
+corrected, balanced mixture where babaisai/babyai/crafter each got a
+real ~16.7% share instead of 1.7%/1.7%/4.9%).
+
+**Real aggregate parse-success rate: 76.18%** (`1 - 8710/36562`) -- UP
+from round 37's 73.01% (+3.17pp), a real but modest improvement. BUT the
+per-game breakdown shows the mixture-balance fix did NOT fix its
+intended target:
+
+- babyai: 5.48% (down slightly from round 37's 7.18%)
+- crafter/default: 0.28% (essentially unchanged from round 37's 0.29%)
+- babaisai/env/goto_win: 4.05% (up slightly from round 37's 3.68%)
+- minihack (8 sub-tasks): 91.3%-94.1% (UP from round 37's 87.0%-89.3%)
+- nle: 90.34% (UP from round 37's 85.46%)
+- textworld/coin_collector: 100.00% (unchanged, still perfect)
+
+**Real, honest conclusion**: the +3.17pp aggregate gain came entirely
+from minihack/nle improving further (already-strong games got
+stronger), NOT from babyai/crafter/babaisai's near-zero rates
+recovering as hypothesized. Increasing these three games' raw ROW COUNT
+share of the mixture (via wrap-around cycling of their small raw pools)
+did NOT translate into the model actually learning their distinct
+action vocabularies. This is a real, important negative result:
+"training-data volume mismatch" was NOT the true root cause of these
+three games' near-total failure, despite being locally identified as a
+highly plausible mechanism (and a real, correctly-implemented fix for
+the underlying representation-imbalance bug it targeted).
+
+**Real, revised hypothesis for the next investigation**: babaisai,
+babyai, and crafter's failures may have a different root cause than
+raw-count underrepresentation -- possibilities not yet tested: (1) their
+demo rows, even at equal COUNT, may still be diluted at the TOKEN level
+if the games have systematically longer/shorter prompts than
+minihack/nle (masking operates on token-level loss weight, and a
+game with fewer but longer prompts could still get less real gradient
+signal despite equal row count); (2) genuine architectural/format
+difficulty specific to these three games (e.g. babaisai's puzzle-reasoning
+requirement, crafter's much larger action vocabulary with 17 actions vs
+minihack's simpler set) that repetition of the same ~350-1200 raw
+episodes cannot overcome without more DIVERSE raw demo data, which this
+campaign does not currently have access to generate more of. This
+remains a real, open problem -- the mixture-balance fix is a genuine
+correctness improvement (every game now gets fair representation) and
+should be KEPT as the new default going forward (it did produce a real
++3.17pp aggregate gain), but it is not sufficient on its own to close
+the gap on these three specific games.
