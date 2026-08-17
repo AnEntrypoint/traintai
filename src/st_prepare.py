@@ -317,7 +317,27 @@ def main():
             game_lens = {g: [len(e) for e in _tok_bulk(rows)] for g, rows in by_game.items()}
             avg_row_len = sum(n for lens in game_lens.values() for n in lens) / len(all_demo_rows)
             token_budget = BALROG_DEMOS_CAP * avg_row_len
-            per_game_budget = token_budget / len(by_game)
+            # Real finding (round 39, 2026-08-17): fully-equal per-game token
+            # share (frac=1.0) moved babyai/babaisai's parse-success up a lot
+            # (5.48%->41.25%, 4.05%->14.48%) but caused a real net regression
+            # in minihack/nle (92.58%->65.82%, 90.34%->71.84%) via the same
+            # vocabulary-bleed mechanism running in reverse -- a zero-sum
+            # lever, not a free win, confirmed via real per-episode eval data
+            # (see AGENTS.md). BALROG_TOKEN_BALANCE_FRAC interpolates between
+            # each game's natural row-balanced share (0.0, round 38's config)
+            # and fully-equal share (1.0, round 39's config), so the next
+            # round can empirically search a partial-balance point instead of
+            # re-testing either extreme again. Default 0.5 is round 40's
+            # proposed test point.
+            balance_frac = float(os.environ.get("BALROG_TOKEN_BALANCE_FRAC", "0.5"))
+            total_tokens_natural = sum(sum(lens) for lens in game_lens.values())
+            natural_share = {g: sum(lens) / total_tokens_natural for g, lens in game_lens.items()}
+            equal_share = 1.0 / len(by_game)
+            target_share = {
+                g: natural_share[g] + balance_frac * (equal_share - natural_share[g])
+                for g in by_game
+            }
+            per_game_budget = {g: token_budget * target_share[g] for g in by_game}
             indices = {g: 0 for g in by_game}
             tokens_written = {g: 0 for g in by_game}
             active = list(by_game.keys())
@@ -325,7 +345,7 @@ def main():
                 wrote_any = False
                 for g in list(active):
                     rows, lens = by_game[g], game_lens[g]
-                    if tokens_written[g] >= per_game_budget:
+                    if tokens_written[g] >= per_game_budget[g]:
                         active.remove(g)
                         continue
                     i = indices[g] % len(rows)
@@ -336,7 +356,7 @@ def main():
                     wrote_any = True
                 if not wrote_any:
                     break
-            print(f"  balrog_demos token-balanced selection: "
+            print(f"  balrog_demos token-balanced selection (frac={balance_frac}): "
                   + ", ".join(f"{g}={indices[g]}rows/{tokens_written[g]}tok" for g in by_game))
 
     n_balrog_selfplay = 0
