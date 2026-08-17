@@ -5035,3 +5035,13 @@ self-play from round 38's checkpoint, lr=1.25e-4, steps=600) with this
 token-balanced selection active, then evaluate under the 24-episode
 standard to test whether babaisai/babyai's near-zero parse-success
 finally moves.
+
+## Round 39 launched: real test of the token-balanced BALROG demo selection fix (2026-08-12)
+
+Self-play from round 38's checkpoint (76.18%, campaign best), fast
+cached-copy path for balrog_demos.jsonl (no re-conversion needed, the
+fix is purely in st_prepare.py's read logic), same lr=1.25e-4/steps=600/
+cap=3000/masking=1, `--seed 13`. This tests whether equalizing TOKEN
+share (not just row share) for babaisai/babyai finally moves their
+near-zero real parse-success, after the row-count-only fix (round 38)
+confirmed insufficient.
