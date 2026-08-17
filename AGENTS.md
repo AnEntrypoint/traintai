@@ -5045,3 +5045,21 @@ cap=3000/masking=1, `--seed 13`. This tests whether equalizing TOKEN
 share (not just row share) for babaisai/babyai finally moves their
 near-zero real parse-success, after the row-count-only fix (round 38)
 confirmed insufficient.
+
+## Round 39 real training result: token-balanced selection confirmed working exactly as designed on Kaggle (2026-08-12)
+
+Real training log confirms the fix ran exactly as verified locally:
+`balrog_demos token-balanced selection: babyai=1479rows/1289707tok,
+crafter=666rows/1289450tok, babaisai=1088rows/1289729tok,
+minihack_nle_textworld=660rows/1288934tok` -- every game at ~1.29M
+tokens, real equal share. Also notable: self-play jumped to 6358 raw
+rows (capped to 1500) from round 38's checkpoint (76.18%), the largest
+self-play pool this campaign has produced, directly reflecting round
+38's much stronger real quality. `loss-masked 5393 BALROG rows, 7.98M
+prompt tokens excluded`, `0.6481 mean trainable-fraction`,
+`val=3.1077 ppl=22.37`.
+
+Checkpoint published as `heclgang/round39tpurealckpt`; eval kernel
+`heclgang/round39evalonly` launched under the 24-episode standard to
+test whether real token-level balance (not just row-level) finally
+moves babaisai/babyai's near-zero parse-success.
