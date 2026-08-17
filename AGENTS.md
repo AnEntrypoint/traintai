@@ -5063,3 +5063,19 @@ Checkpoint published as `heclgang/round39tpurealckpt`; eval kernel
 `heclgang/round39evalonly` launched under the 24-episode standard to
 test whether real token-level balance (not just row-level) finally
 moves babaisai/babyai's near-zero parse-success.
+
+## Real finding: eval kernel template has an unhardened network dependency (2026-08-12)
+
+While round 39's eval kernel ran unusually long (~4.5h+ vs the typical
+range for this exact 24-episode-standard config), local inspection of
+the eval notebook template found a real, previously-unnoticed risk:
+cell 7 installs textworld via `pip install "textworld @
+git+https://github.com/..."` -- a network-dependent git clone with no
+timeout wrapper, the same class of risk that caused round 38's earlier
+gdown-based slowdown. This is a real, concrete robustness gap in the
+standard eval kernel template (used by every eval kernel this session,
+round 13 onward) -- worth hardening with a `timeout` wrapper in a
+future kernel iteration, matching the pattern already applied to
+round 38b's (unused, TPU-slot-blocked) gdown retry attempt. Not
+retroactively fixable for round 39's already-running kernel; noted here
+for the next template revision.
