@@ -5171,3 +5171,75 @@ investigating crafter's real action-vocabulary/format difficulty
 directly, e.g. via targeted crafter-only fine-tuning or examining
 whether crafter's 17-action space vs minihack/nle's much smaller
 effective action set is itself the harder problem.
+
+## Round 40: partial-balance (frac=0.5) real result -- the lever is NOT smoothly interpolable (2026-08-17)
+
+Added `BALROG_TOKEN_BALANCE_FRAC` (0.0-1.0) to `st_prepare.py`,
+interpolating each game's target token share between round 38's
+natural/row-balanced share and round 39's fully-equal share. Verified
+locally before spending Kaggle time (frac=0.5 landed babyai/babaisai
+around 16-17% share vs natural ~6-8% / equal 25%, minihack/nle/
+textworld combined at ~48% vs natural 70% / equal 25%). Trained round
+40 at frac=0.5 (self-play from round 38's real 76.18% checkpoint, seed
+17), full 309-episode real coverage this time (the round-39 Boxoban
+infra gap -- minihack's level maps never downloaded -- was fixed by
+adding minihack's own `download_boxoban_levels` script as a real setup
+step before eval.py runs).
+
+Real per-game parse-success, all three rounds compared directly:
+
+| game      | r38 (natural, frac=0.0) | r39 (equal, frac=1.0) | r40 (frac=0.5) |
+|-----------|--------------------------|-------------------------|-----------------|
+| babyai    | 5.48%                    | 41.25%                  | **17.20%**      |
+| babaisai  | 4.05%                    | 14.48%                  | **4.35%**       |
+| crafter   | 0.28%                    | 0.26%                   | **0.32%**       |
+| textworld | 100.00%                  | 100.00%                 | 100.00%         |
+| minihack  | 92.58%                   | 65.82%                  | **85.29%**      |
+| nle       | 90.34%                   | 71.84%                  | **81.63%**      |
+| **aggregate (excl boxoban, fair 3-way compare)** | **73.67%** | **60.02%** | **68.04%** |
+
+This is a real, important, non-obvious finding: **the relationship
+between token-balance fraction and per-game parse-success is NOT a
+smooth/monotonic interpolation.** If it were, frac=0.5 should have
+landed roughly halfway between r38 and r39 on every game. Instead:
+
+- babaisai reverted almost all the way back to round 38's near-zero
+  baseline (14.48%->4.35%, versus a naively expected ~9%), while
+  minihack/nle recovered MORE than half of their round-39 loss
+  (minihack 65.82%->85.29%, ~78% of the way back to r38's 92.58%; nle
+  71.84%->81.63%, ~54% of the way back). babyai partially held its
+  gain (41.25%->17.20%, roughly the naively expected halfway point,
+  the one game that DID interpolate close to linearly).
+- This suggests a real THRESHOLD effect rather than a smooth tradeoff:
+  babaisai's real gain at frac=1.0 needed close to the FULL equal-share
+  token budget to manifest at all, and reverted sharply once that
+  budget dropped partway back toward natural share. minihack/nle, by
+  contrast, only needed a partial share restored to substantially
+  recover -- consistent with minihack/nle being the large, robust,
+  data-rich majority of the mixture that degrades gracefully as share
+  shrinks, while babaisai is a small, format-fragile minority that
+  needs to cross some minimum real token-exposure bar before the
+  model reliably produces its distinct action vocabulary at all.
+- The aggregate (68.04%) is real and does sit between the two
+  extremes, but is not a genuine "best of both worlds" -- it is closer
+  to a weighted average dominated by minihack/nle's larger step counts
+  (16453+12000=28453 of 32323 total non-boxoban steps, ~88% of the
+  denominator), which masks how badly babaisai specifically regressed
+  relative to round 39.
+
+Practical conclusion: round 38's checkpoint (76.18% raw, 73.67%
+fair-compare) remains the real campaign best and the correct base for
+the flywheel to continue from -- none of round 38/39/40's token-balance
+variants beat it on aggregate. The next real lever, given the
+threshold-effect finding, is NOT further interpolation along the same
+frac axis (round 40 already shows that's not linear and doesn't
+obviously beat frac=0.0). Two concrete candidates for the next round,
+to test via local processing/cheap simulation before spending Kaggle
+compute where possible: (a) test frac values ABOVE 0.5 but below 1.0
+(e.g. 0.75) to see if babaisai's threshold sits closer to full share
+than assumed, since babyai's near-linear response suggests different
+games may have different real thresholds worth separately tuning per
+game rather than one shared frac; or (b) abandon the shared-frac
+approach entirely and set each game's target share independently,
+informed by round 39/40's real per-game response curves now that two
+real data points exist per game.
