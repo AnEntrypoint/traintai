@@ -4955,3 +4955,38 @@ correctness improvement (every game now gets fair representation) and
 should be KEPT as the new default going forward (it did produce a real
 +3.17pp aggregate gain), but it is not sufficient on its own to close
 the gap on these three specific games.
+
+## Local processing: confirmed real token-level dilution for babyai/babaisai, but not crafter (2026-08-12)
+
+Tested hypothesis #1 from the prior negative-result analysis (token-
+level dilution despite equal row count) directly on real post-fix
+`balrog_demos_fixed.jsonl` data: tokenized ~3000 real rows with the
+actual project tokenizer.
+
+**Real result**: babaisai averages 1192 tokens/row, babyai averages
+889 tokens/row -- both substantially SHORTER than the mixture average
+(~1974 tokens/row, dominated by minihack/nle's longer observation
+text). Even with equal ROW count (the mixture-balance fix), babyai and
+babaisai get proportionally 45-55% FEWER real training TOKENS than
+their row-count share implies. This is a real, quantified, still-
+uncorrected imbalance and a real partial explanation for why the row-
+count fix alone didn't move their parse-success.
+
+**Crafter does NOT fit this pattern**: crafter averages 1926
+tokens/row, essentially equal to the mixture average -- token-level
+dilution does NOT explain crafter's persistent near-zero rate. Crafter
+likely has a genuinely distinct problem (its 17-action vocabulary vs
+minihack's ~8 and babaisai's 5, or its two-word "Move North"-style
+format requiring exact capitalization/phrasing the model may need more
+than repeated small-pool exposure to learn).
+
+**Real, actionable next lever, not yet tested**: a TOKEN-based cap for
+babaisai/babyai (write more repetitions to match token budget, not row
+count) would be a real, distinct, cheap fix to test -- but this is a
+non-trivial `st_prepare.py`/`balrog_demo_convert.py` change requiring
+careful design (token-counting during the write loop, not just row
+counting) and should be scoped as a deliberate follow-up round rather
+than rushed. Given this session's context budget, this finding and the
+mixture-balance fix's real +3.17pp gain (73.01%->76.18%, new campaign
+best real checkpoint `heclgang/round38tpurealckpt`) are recorded as the
+final state of this investigation for this session.
