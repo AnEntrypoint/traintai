@@ -4876,3 +4876,32 @@ cap increase specifically AFTER round 38 confirms per-game balance is
 fixed is a genuinely different, not-yet-tested configuration -- the
 combination of balanced-internal-representation AND higher overall
 BALROG share has never been tested together.
+
+## Round 38 real training result: mixture-balance fix confirmed working exactly as designed (2026-08-12)
+
+Real ~114min raw re-conversion completed. `balrog_convert.log` confirms
+the fix works exactly as designed: every game now gets an equal
+3333-3334 rows (16.7% each) of the 20,000-row cap -- babaisai (725
+available rows, cycled ~4.6x), babyai (356 available, cycled ~9.4x),
+crafter (1168 available, cycled ~2.9x) all now get the SAME share as
+minihack (3873 available) and nle (18396 available), up from their real
+pre-fix shares of 1.7%/1.7%/4.9%.
+
+Training completed normally: `balrog_selfplay 1500` (1948 raw, same
+source as round 32), `loss-masked 4500 BALROG rows, 8.04M prompt tokens
+excluded`, `0.6463 mean trainable-fraction`, `val=3.1034 ppl=22.27` --
+in the normal range matching every prior round at this config.
+
+Checkpoint published as `heclgang/round38tpurealckpt`; the corrected
+`balrog_demos.jsonl` republished as the new `heclgang/balrog-demos-cache`
+for all future rounds. Eval kernel `heclgang/round38evalonly` launched
+under the corrected 24-episode standard to test whether the fix
+improved babaisai/babyai/crafter's near-zero real parse-success.
+
+(Note: the earlier "5+ hours running" status-poll observations were a
+harness/session artifact -- a multi-day gap between polling turns, not
+the kernel itself actually hanging. The kernel's own real internal
+timing shows the conversion step took ~114 minutes, close to the
+historical ~90min estimate, and training completed normally in ~110s
+after that. No kernel was ever actually stuck; the anomaly was in this
+session's own wall-clock tracking across a session-continuation gap.)
