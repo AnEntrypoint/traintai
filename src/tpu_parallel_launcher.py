@@ -1,14 +1,18 @@
-"""Run up to 8 independent train.py invocations concurrently, one per
-real v5e-8 TPU chip, using TRAINTAI_XLA_DEVICE_INDEX for per-process
-chip pinning (confirmed working in-process: round9tpusmoke v6 showed
-xm.xla_device(n) resolving cleanly for n=0..7 with no env-var pinning
-crash, unlike the TPU_VISIBLE_CHIPS subprocess approach which SIGABRTs
-on this pod's runtime).
-
-SPMD sharding is disabled for every child (TRAINTAI_NO_SPMD=1) -- SPMD
-crashes with a real, confirmed SIGSEGV on this pod (see device.py's
-setup_spmd_mesh docstring), and each child here only needs its own
-single chip, not a mesh across all of them.
+"""CONFIRMED NOT VIABLE AS DESIGNED (round 44, 2026-08-18): real Kaggle
+testing found every one of 8 subprocess.Popen children crashes with a
+real SIGABRT, "Could not find SliceBuilder port 8471 in any of the 0
+ports provided in tpu_process_addresses=local" -- the same error class
+the TPU_VISIBLE_CHIPS env-var approach hit. xm.xla_device(n) pinning
+working within ONE process (round9tpusmoke v6: xla:0..7 all resolved
+cleanly) does NOT generalize to N independent OS subprocesses each
+calling it once -- this pod's TPU runtime coordination service appears
+to accept only one real claimant process, not N. Kept in the tree as a
+record of a real, tested-and-failed approach (see AGENTS.md round 44,
+device.py's get_device() docstring) -- do not resurrect this design
+without first understanding why the runtime rejects multi-process
+claims, e.g. investigating whether a single coordinator process could
+own the TPU and dispatch work to per-chip worker threads instead of
+separate OS processes.
 
 Each variant is a real, independent train.py argv list (e.g. a
 lever-isolation sweep: same base config, one hyperparameter varied per

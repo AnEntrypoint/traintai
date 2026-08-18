@@ -38,14 +38,19 @@ def _xla_device():
 
 def get_device():
     """Set TRAINTAI_XLA_DEVICE_INDEX=<n> (0..tpu_chip_count()-1) to pin
-    this process to one specific TPU chip via xm.xla_device(n) -- real,
-    confirmed working in-process on a v5e-8 pod (round9tpusmoke v6:
-    xla:0 through xla:7 all resolved cleanly, no env-var pinning
-    needed). This is the real mechanism an 8-way parallel single-chip
-    launcher uses to give each of 8 OS processes its own distinct chip,
-    since SPMD sharding crashes on this pod (see setup_spmd_mesh) and
-    TPU_VISIBLE_CHIPS subprocess env-var pinning also crashes (real
-    SIGABRT confirmed, "tpu_process_addresses=local" conflict)."""
+    this process to one specific TPU chip via xm.xla_device(n) --
+    confirmed working within ONE process on a v5e-8 pod (round9tpusmoke
+    v6: xla:0 through xla:7 all resolved cleanly). Does NOT generalize
+    to N independent OS subprocesses each calling this once: round 44's
+    real test of src/tpu_parallel_launcher.py (8 subprocess.Popen
+    children, each with its own TRAINTAI_XLA_DEVICE_INDEX) found every
+    child crashes with a real SIGABRT, "Could not find SliceBuilder
+    port 8471 in any of the 0 ports provided in
+    tpu_process_addresses=local" -- the same error class the
+    TPU_VISIBLE_CHIPS env-var approach hit and was abandoned for. The
+    TPU runtime's local coordination service appears to accept only one
+    real claimant process per pod, not N -- tpu_parallel_launcher.py is
+    confirmed NOT viable as designed (see AGENTS.md round 44)."""
     override = os.environ.get("TRAINTAI_DEVICE")
     if override:
         return _xla_device() if override == "xla" else torch.device(override)
@@ -89,12 +94,17 @@ def setup_spmd_mesh():
     device rather than crash.
 
     Set TRAINTAI_NO_SPMD=1 to force this to return None even on a
-    multi-chip pod -- real Kaggle v5e-8 testing found SPMD's
-    ExecuteReplicated() crashes with a hard SIGSEGV inside torch_xla's
-    PjRt client (a real, unresolved upstream bug, not fixable here).
-    The multi-process-single-chip-each launcher (round9_tpu_parallel.py)
-    uses this to get one real chip per process without each process
-    trying to build its own 8-chip mesh."""
+    multi-chip pod. HISTORY: round9tpusmoke v3-v6 found SPMD's
+    ExecuteReplicated() crashed with a hard SIGSEGV inside torch_xla's
+    PjRt client. Round 44 re-tested mesh CONSTRUCTION in isolation
+    (this function alone, no training) on a later Kaggle TPU image and
+    it now succeeds cleanly (real mesh object returned, exit code 0) --
+    the underlying torch_xla version was never pinned in this repo, so
+    a base-image update between rounds is the likely explanation.
+    mark_sharding()/a real training run under SPMD is still UNVERIFIED
+    as of round 44 -- do not trust this for a full round until a real
+    isolated smoke test (shard_batch() + a few real gradient steps)
+    confirms it beyond mesh construction (see AGENTS.md round 44)."""
     if os.environ.get("TRAINTAI_NO_SPMD") == "1":
         return None
     n = tpu_chip_count()

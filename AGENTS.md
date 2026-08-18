@@ -5399,3 +5399,68 @@ vocabulary (short single-word directions: up/down/left/right) is
 simply too easily confused with the compass-direction convention
 dominating the rest of the mixture regardless of relative row/token
 count, a format-collision problem no mixture-ratio lever can fix.
+
+## Round 44: real 8-chip TPU utilization test -- SPMD mesh build now succeeds, but subprocess-based parallel launcher does not (2026-08-18)
+
+User asked whether the campaign's TPU training is using all 8 chips on
+Kaggle's v5e-8 pod. Real answer found via direct code inspection: no --
+every training round has run with `TRAINTAI_NO_SPMD=1` (forced
+single-chip) since round9tpusmoke v3-v6 confirmed `setup_spmd_mesh()`
+crashes with a real SIGSEGV inside torch_xla's PjRt client
+(`ExecuteReplicated()`), and `src/tpu_parallel_launcher.py` (8
+independent per-chip `train.py` subprocesses via
+`TRAINTAI_XLA_DEVICE_INDEX`) existed but was never verified end-to-end
+on real hardware. Ran a real, isolated smoke-test kernel
+(`heclgang/round44tpuparallelsmoke`, TPU, run concurrently with
+round 43's GPU eval since they don't share a resource slot) to check
+both real options.
+
+**Real result 1 -- 8 real chips confirmed live**:
+`xr.global_runtime_device_count()` returns 8, `device_type: TPU`, as
+expected.
+
+**Real result 2 -- SPMD mesh build now succeeds** (a real change from
+the earlier confirmed SIGSEGV): calling `setup_spmd_mesh()` directly
+(with `TRAINTAI_NO_SPMD` unset) returned a real mesh object
+(`{'device_ids': [0..7], 'mesh_shape': (8,), 'axis_names': ('batch',)}`)
+with no crash, `exit code: 0`. This does NOT yet prove a full SPMD
+training run (`mark_sharding()` + real gradient steps) works -- only
+that mesh CONSTRUCTION, the specific operation that crashed before,
+no longer does on whatever torch_xla version this kernel's image now
+ships (no version was ever pinned in this repo, so a Kaggle base-image
+update between round 9 and round 44 is the most likely real
+explanation). Worth a real, still-isolated next step: attempt an
+actual `shard_batch()` + a few real training steps under SPMD before
+trusting this for a full round.
+
+**Real result 3 -- the 8-way parallel subprocess launcher does NOT
+work as designed**: all 8 `tpu_parallel_launcher.py` child processes
+crashed with `returncode -6` (SIGABRT), real error: `Could not find
+SliceBuilder port 8471 in any of the 0 ports provided in
+tpu_process_addresses="local"`. This is the EXACT error class
+`device.py`'s own docstring already documented for the
+`TPU_VISIBLE_CHIPS` env-var approach (which was abandoned in favor of
+in-process `xm.xla_device(n)` pinning, confirmed working via
+round9tpusmoke v6) -- but round 44's real test shows the same failure
+reproduces even with in-process-style device indexing once each chip's
+device is claimed from a SEPARATE OS SUBPROCESS via
+`subprocess.Popen`, not within one process. This corrects the earlier
+finding: `xm.xla_device(n)` pinning working "in-process" (round9tpusmoke
+v6) does NOT generalize to N independent subprocesses each calling it
+once -- the TPU runtime's local coordination service only accepts one
+real claimant process, not N. `tpu_parallel_launcher.py` as currently
+designed is confirmed NOT viable for real 8-way independent-experiment
+parallelism on this pod.
+
+**Practical conclusion**: the SPMD (single-process, real multi-chip
+sharding) path is now the more promising real lever for using all 8
+chips, not the multi-process parallel-launcher path (which is now
+confirmed broken by a real, different root cause than previously
+documented). Next real step, gated on round 43 resolving and genuine budget
+availability: a small, still-isolated SPMD real-training smoke test
+(`shard_batch()` + ~10-20 real gradient steps, watched for a repeat
+SIGSEGV or a real speed/correctness signal) before trusting SPMD for
+a full round's training. If that also holds, the real payoff is
+training wall-clock roughly 8x faster per round (data-parallel across
+all chips) -- worth pursuing once confirmed, but not yet proven beyond
+mesh construction.
