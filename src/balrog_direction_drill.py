@@ -100,9 +100,9 @@ def main():
     ap.add_argument("--out", default=os.path.join(NPC, "balrog_direction_drill.jsonl"))
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP,
                      help="total output rows across all games; split "
-                          "EQUALLY per game (cap // num_games), each "
-                          "game's own rows cycling via wrap-around if it "
-                          "has fewer unique rows than its target share --"
+                          "EQUALLY per game by default (cap // num_games), "
+                          "each game's own rows cycling via wrap-around if "
+                          "it has fewer unique rows than its target share --"
                           " concentrates extra gradient updates on the "
                           "confused decision equally across games, not "
                           "proportional to a game's raw row availability "
@@ -111,6 +111,23 @@ def main():
                           "dominate, overcorrecting babyai/babaisai "
                           "TOWARD compass words instead of away from "
                           "them -- see AGENTS.md).")
+    ap.add_argument("--game-share", default="",
+                     help='optional JSON dict overriding the equal-share '
+                          'default with explicit per-game fractions of '
+                          '`cap`, e.g. \'{"crafter": 0.4, "babaisai": 0.3, '
+                          '"babyai": 0.15, "minihack_nle_textworld": 0.15}\''
+                          ' (missing games default to an equal split of '
+                          'the remaining share). Real motivation: crafter '
+                          'stayed flat (~0.3%% parse-success) across every '
+                          'round tested despite equal drill share -- its '
+                          'real instruction prompt is unusually heavy (a '
+                          '22-item achievements list + 16 action '
+                          'definitions vs babaisai\'s 5 actions/no '
+                          'achievements), a plausible reason its own '
+                          'direction words get less effective reinforcement '
+                          'per row than other games\' -- worth testing a '
+                          'higher crafter share before concluding the '
+                          'mechanism itself cannot help crafter.')
     args = ap.parse_args()
 
     if not os.path.exists(args.demos):
@@ -141,7 +158,17 @@ def main():
     # cycling through each game's own unique rows, same wrap-around
     # principle as balrog_demo_convert.py's original row-balance fix)
     # instead of letting repeat*unique_rows vary by game.
-    target_rows_per_game = args.cap // max(1, len(by_game))
+    games = list(by_game.keys())
+    if args.game_share:
+        override = json.loads(args.game_share)
+        remaining_games = [g for g in games if g not in override]
+        remaining_share = max(0.0, 1.0 - sum(override.values()))
+        equal_remainder = remaining_share / len(remaining_games) if remaining_games else 0.0
+        target_share = {g: override.get(g, equal_remainder) for g in games}
+    else:
+        target_share = {g: 1.0 / len(games) for g in games}
+    target_rows = {g: int(args.cap * target_share[g]) for g in games}
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     total_out = 0
     with open(args.out, "w", encoding="utf-8") as f:
@@ -150,7 +177,7 @@ def main():
                 continue
             n = 0
             i = 0
-            while n < target_rows_per_game:
+            while n < target_rows[game]:
                 f.write(json.dumps({"text": rows[i % len(rows)]}) + "\n")
                 i += 1
                 n += 1
@@ -158,10 +185,11 @@ def main():
 
     print(f"{'game':<25} {'unique rows':>12} {'output rows':>12}")
     for game, rows in by_game.items():
-        out_n = target_rows_per_game if rows else 0
+        out_n = target_rows[game] if rows else 0
         print(f"{game:<25} {len(rows):>12} {out_n:>12}")
+    _mode = f"game_share={target_share}" if args.game_share else "equal share"
     print(f"\nscanned {total_seen} demo rows -> {total_out} direction-drill rows "
-          f"(equal {target_rows_per_game}/game, wrap-around, total cap={args.cap}) -> {args.out}")
+          f"({_mode}, wrap-around, total cap={args.cap}) -> {args.out}")
 
 
 if __name__ == "__main__":
