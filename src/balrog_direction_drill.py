@@ -29,10 +29,14 @@ _CRAFTER_ACTION_DICT/_MINIHACK_ACTIONS dicts (verbatim from each real
 BALROG environment's own action space, not re-derived).
 
 Output: data/npc/balrog_direction_drill.jsonl, one {"text": ...} row per
-kept (repeated) direction-action step. Reads directly from an existing
-balrog_demos.jsonl (already-rendered "...assistant: <action>" rows, same
-format st_prepare.py's read stage consumes) -- no re-conversion or
-records.zip access needed.
+kept (repeated) direction-action step, EQUAL row count per game
+(wrap-around cycling, not proportional to raw availability -- round 43
+found the naive repeat-then-cap scheme let minihack/nle's larger real
+pool dominate the drill and overcorrect babyai/babaisai toward compass
+words, the opposite of the intended fix). Reads directly from an
+existing balrog_demos.jsonl (already-rendered "...assistant: <action>"
+rows, same format st_prepare.py's read stage consumes) -- no
+re-conversion or records.zip access needed.
 """
 
 import argparse
@@ -44,7 +48,6 @@ DATA = os.path.join(HERE, "..", "data")
 NPC = os.path.join(DATA, "npc")
 
 DEFAULT_CAP = 20000
-DEFAULT_REPEAT = 4
 
 # Real direction-word action sets per game, verbatim from
 # balrog_demo_convert.py's _BABAISAI_ACTIONS/_MINIHACK_ACTIONS/
@@ -96,14 +99,18 @@ def main():
                      help="an existing balrog_demos.jsonl to pull direction-action rows from")
     ap.add_argument("--out", default=os.path.join(NPC, "balrog_direction_drill.jsonl"))
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP,
-                     help="max output rows per game, after repetition")
-    ap.add_argument("--repeat", type=int, default=DEFAULT_REPEAT,
-                     help="how many times each real direction-action row is "
-                          "repeated in the output -- concentrates extra "
-                          "gradient updates on the confused decision "
-                          "without needing new/synthetic data, matching "
-                          "the flywheel's existing 'more real repetitions, "
-                          "not more variety' pattern for a hard behavior.")
+                     help="total output rows across all games; split "
+                          "EQUALLY per game (cap // num_games), each "
+                          "game's own rows cycling via wrap-around if it "
+                          "has fewer unique rows than its target share --"
+                          " concentrates extra gradient updates on the "
+                          "confused decision equally across games, not "
+                          "proportional to a game's raw row availability "
+                          "(round 43's real finding: the old repeat-then-"
+                          "cap scheme let minihack/nle's larger raw pool "
+                          "dominate, overcorrecting babyai/babaisai "
+                          "TOWARD compass words instead of away from "
+                          "them -- see AGENTS.md).")
     args = ap.parse_args()
 
     if not os.path.exists(args.demos):
@@ -121,23 +128,40 @@ def main():
         if action in DIRECTION_ACTIONS[game]:
             by_game[game].append(text)
 
+    # Real finding (round 43, 2026-08-18, see AGENTS.md): the original
+    # `(rows * repeat)[:cap]` scheme let each game's real unique-row
+    # count determine its final drill share -- minihack_nle_textworld's
+    # much larger real pool (4529 unique rows vs babyai's 1651/
+    # babaisai's 1088) dominated the drill dataset even after repeat=4,
+    # so extra gradient concentration disproportionately reinforced
+    # minihack/nle's OWN convention model-wide, overcorrecting babyai/
+    # babaisai TOWARD compass words instead of away from them (real
+    # eval: babyai 5.48%->2.40%, babaisai 4.05%->3.18%, both worse).
+    # Fixed by giving every game an EQUAL final row count (wrap-around
+    # cycling through each game's own unique rows, same wrap-around
+    # principle as balrog_demo_convert.py's original row-balance fix)
+    # instead of letting repeat*unique_rows vary by game.
+    target_rows_per_game = args.cap // max(1, len(by_game))
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     total_out = 0
     with open(args.out, "w", encoding="utf-8") as f:
         for game, rows in by_game.items():
             if not rows:
                 continue
-            repeated = (rows * args.repeat)[: args.cap]
-            for text in repeated:
-                f.write(json.dumps({"text": text}) + "\n")
+            n = 0
+            i = 0
+            while n < target_rows_per_game:
+                f.write(json.dumps({"text": rows[i % len(rows)]}) + "\n")
+                i += 1
+                n += 1
                 total_out += 1
 
     print(f"{'game':<25} {'unique rows':>12} {'output rows':>12}")
     for game, rows in by_game.items():
-        out_n = min(len(rows) * args.repeat, args.cap)
+        out_n = target_rows_per_game if rows else 0
         print(f"{game:<25} {len(rows):>12} {out_n:>12}")
     print(f"\nscanned {total_seen} demo rows -> {total_out} direction-drill rows "
-          f"(repeat={args.repeat}, cap={args.cap}/game) -> {args.out}")
+          f"(equal {target_rows_per_game}/game, wrap-around, total cap={args.cap}) -> {args.out}")
 
 
 if __name__ == "__main__":
