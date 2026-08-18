@@ -5566,3 +5566,82 @@ to this new drill dataset. Round 38's checkpoint is no longer the
 correct base to compare against or resume from -- round 43's checkpoint
 (76.18%-class raw aggregate) is the new real best and should be used as
 the self-play/continuation source for the next round.
+
+## Round 46: equal-share direction-drill fix confirmed -- another real new campaign best (75.99%), but babaisai got WORSE and crafter stayed flat (2026-08-19)
+
+Real bug found and fixed before this result: round 46's FIRST launch
+(v1) failed because the notebook cell still passed the now-removed
+`--repeat 4` flag to `balrog_direction_drill.py` after the equal-share
+fix (commit `25a4239`) removed that argument -- the drill build errored
+out (`direction_drill 0` rows), silently producing a checkpoint whose
+drill stage never actually ran. Caught via direct log inspection before
+spending eval-kernel time on the invalid checkpoint; fixed the notebook
+and relaunched as v2, verified locally first (`direction_drill 19998`,
+correctly equal 6666/game).
+
+Real eval result (full 309-episode coverage):
+
+| game      | r38 (baseline) | r43 (drill, imbalanced) | r46 (drill, equal-share) |
+|-----------|------------------|---------------------------|-----------------------------|
+| babyai    | 5.48%            | 2.40%                      | **4.52%**                    |
+| babaisai  | 4.05%            | 3.18%                      | **1.46%**                    |
+| crafter   | 0.28%            | 0.31%                      | **0.15%**                    |
+| textworld | 100.00%          | 100.00%                    | 100.00%                       |
+| minihack  | 92.58%           | 95.07%                     | **95.63%**                   |
+| nle       | 90.34%           | 95.02%                     | **95.30%**                   |
+| **aggregate (excl boxoban)** | 73.67% | 74.68% | **75.99%** |
+
+**Real, genuine new campaign best on aggregate: 75.99%**, beating
+round 43's 74.68%. minihack/nle both improved slightly further past
+their own round-43 highs, confirming the direction-drill mechanism
+continues to help the already-strong games with no sign of diminishing
+returns yet.
+
+**babyai partially recovered** (2.40%->4.52%), a real improvement over
+round 43's overcorrection, though still below round 38's original
+5.48% baseline -- consistent with the diagnosis that round 43's
+imbalanced drill specifically hurt babyai by disproportionately
+reinforcing minihack/nle's convention, and equalizing the drill share
+partially undid that damage.
+
+**But babaisai got WORSE, not better** (3.18%->1.46%, now its worst
+real result across the entire campaign) despite receiving an EQUAL
+drill share this round (up from a smaller share in round 43's
+imbalanced version). This is a real, honest surprise that complicates
+the "imbalance caused the regression" story -- babaisai's own drill
+share increased between r43 and r46, yet its accuracy fell further.
+Two real possibilities, not yet distinguished: (a) babaisai's hard
+THRESHOLD behavior (first found in round 40's mixture-share
+experiments) may also apply to the direction-drill lever -- its
+current equal 1/3 share may still be below whatever threshold it needs
+to actually benefit, even though 1/3 is a large jump from round 43's
+smaller effective share; or (b) genuine run-to-run noise/interaction
+with this round's specific self-play data (sourced from round 43's
+real episodes, not round 38's) -- only 24 real babaisai episodes exist
+per eval, a real, already-established small-sample concern this
+campaign flagged as far back as round 36.
+
+**Crafter remains essentially flat** (0.31%->0.15%, both noise-level,
+no real signal either way) despite already having its OWN correct
+direction-action targets in the drill at equal share with every other
+game. This is now the SIXTH consecutive real round (38, 40, 41, 42,
+43, 46) showing no real movement in crafter's parse-success regardless
+of mixture share or direction-drill lever -- strong, repeated evidence
+that crafter's problem is not a data-representation or gradient-
+concentration issue at all, and further mixture/drill-share tuning for
+crafter specifically is unlikely to help without new information.
+
+**Practical conclusion**: round 46's checkpoint (75.99%, raw aggregate
+in the 77-78% range) is the new real campaign best and should become
+the self-play/continuation source going forward. Two real next-step
+candidates, both already built and ready to test: (a)
+`balrog_direction_drill.py`'s new `--game-share` override (commit
+`9cb8625`) to test a much higher babaisai-specific drill share, probing
+whether babaisai's regression is really a threshold effect that a
+bigger share (not just equal share) would fix; (b) given crafter's now
+sixth consecutive flat result across every mixture/drill lever tried,
+treat crafter as needing a genuinely different intervention entirely
+(e.g. examining whether its real 22-item-achievement-list instruction
+prompt is simply too long/crowded for its own action list to be
+reliably attended to, independent of training data volume) rather than
+another data-share variant.
