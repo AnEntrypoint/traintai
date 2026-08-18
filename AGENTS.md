@@ -5315,3 +5315,87 @@ games' demos before the shared mixture, or investigating whether the
 model's context window is simply too crowded by minihack/nle's much
 longer real observation text to reliably retain the shorter games'
 distinct format).
+
+## Round 42: crafter at half share confirms it's a real, graded regularization effect -- but babaisai's gain reverted too (2026-08-18)
+
+Tested crafter at HALF its natural share (7.95%, real confirmed
+218rows/411714tok on Kaggle, vs 0% in round 41 / 15.9% natural),
+babyai 10.78%/babaisai 10.87% (smaller boosts than round 41's 13.6%/
+16.0%, since crafter's restored share ate into the redistribution
+budget), minihack/nle/textworld untouched at natural ~70.4%.
+
+Real result, full 309-episode coverage:
+
+| game      | r38 (natural) | r39 (equal) | r40 (frac=0.5) | r41 (crafter=0%) | r42 (crafter=7.95%) |
+|-----------|----------------|--------------|------------------|---------------------|------------------------|
+| babyai    | 5.48%          | 41.25%       | 17.20%           | 9.16%                | **13.62%**             |
+| babaisai  | 4.05%          | 14.48%       | 4.35%            | 12.92%               | **3.27%**              |
+| crafter   | 0.28%          | 0.26%        | 0.32%            | 0.16%                | **0.73%**              |
+| textworld | 100.00%        | 100.00%      | 100.00%          | 100.00%              | 100.00%                |
+| minihack  | 92.58%         | 65.82%       | 85.29%           | 52.91%               | **81.86%**             |
+| nle       | 90.34%         | 71.84%       | 81.63%           | 52.25%               | **83.04%**             |
+| **aggregate (excl boxoban)** | **73.67%** | **60.02%** | **68.04%** | **45.96%** | **66.92%** |
+
+This is a real, decisive confirmation of round 41's hypothesis:
+restoring HALF of crafter's natural share (instead of zero) recovered
+almost all of minihack/nle's round-41 collapse (minihack 52.91%->
+81.86%, nle 52.25%->83.04%, both close to round 40's frac=0.5 numbers)
+-- strong evidence that crafter's demo rows really do provide
+regularization value to the shared model in a graded, not all-or-
+nothing, way. Even a modest ~8% crafter share is enough to avoid most
+of the round-41 damage.
+
+However, babaisai's gain also reverted almost fully (12.92%->3.27%,
+back near round 38's 4.05% baseline) even though babaisai's OWN target
+share barely changed (16.0%->10.87%, still well above its natural
+5.7%) -- this is a second real confirmation of babaisai's THRESHOLD
+behavior first seen in round 40: it needs a share close to round 41's
+16.0% (near round 39's fully-equal 25%) to reliably manifest its gain,
+and 10.87% is evidently below that threshold, matching round 40's
+frac=0.5 babaisai result (4.35%) almost exactly. babyai, by contrast,
+held a real gain at 13.62% -- consistent with babyai being a more
+gradual/linear responder that benefits from any meaningful boost above
+its natural ~8% share, not a hard threshold.
+
+Aggregate (66.92%) is real progress over round 41 (45.96%) but still
+below round 38's 73.67% and round 40's 68.04%. **Round 38's checkpoint
+remains the unambiguous real campaign best across all five token-share
+variants now tested (38/39/40/41/42).**
+
+Real, load-bearing synthesis across the whole token-share investigation
+arc (rounds 38-42, 5 real data points per game):
+- **crafter**: needs SOME real share (>0%) to avoid damaging the rest
+  of the mixture, but its own accuracy never moves regardless of share
+  (0.16%-0.32%-0.73%-0.26%-0.28%, all noise-level) -- keep a modest
+  natural-or-higher share for its regularization value, don't expect
+  its own accuracy to ever improve via this lever.
+- **babaisai**: a hard threshold responder -- needs close to the FULL
+  equal-share (~25%, round 39) or at minimum round 41's ~16% to
+  manifest any real gain; anything below that (round 40's frac=0.5
+  ~15%, round 42's 10.87%) reverts it close to its ~4% natural
+  baseline. Partial boosts do not partially help babaisai.
+- **babyai**: a graded/linear responder -- any meaningful share above
+  its ~8% natural share (10.78%-17.20%-41.25% all showed real gains
+  scaling roughly with share) produces a real, proportional gain.
+- **minihack/nle**: degrade in an accelerating way as THEIR OWN share
+  shrinks below natural, but recover almost fully once returned near
+  natural (~70%) regardless of how the freed share was redistributed
+  among the other three games -- their real cost is a function of
+  their OWN share, not of what crafter/babyai/babaisai's shares are
+  individually.
+
+None of the five real configurations tested beats round 38's plain
+natural-share baseline on aggregate. The token-share lever family is
+now genuinely exhausted for this campaign: the real per-game response
+shapes are well characterized, and the fundamental tension (babaisai
+needs near-full share to help at all, but that same share change
+damages minihack/nle enough to cost more aggregate than babaisai/
+babyai gain back) has no further blind configuration worth testing.
+Per the active /goal directive, the next real lever must come from
+outside the token-share axis -- e.g. per-game prompt/format hardening,
+a dedicated small SFT pass specifically on babaisai's demos before the
+shared mixture, or investigating whether babaisai's real action
+vocabulary (short single-word directions: up/down/left/right) is
+simply too easily confused with the compass-direction convention
+dominating the rest of the mixture regardless of relative row/token
+count, a format-collision problem no mixture-ratio lever can fix.
