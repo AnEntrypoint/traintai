@@ -93,18 +93,18 @@ def setup_spmd_mesh():
     importable, so callers can no-op cleanly on any non-multi-chip
     device rather than crash.
 
-    Set TRAINTAI_NO_SPMD=1 to force this to return None even on a
-    multi-chip pod. HISTORY: round9tpusmoke v3-v6 found SPMD's
-    ExecuteReplicated() crashed with a hard SIGSEGV inside torch_xla's
-    PjRt client. Round 44 re-tested mesh CONSTRUCTION in isolation
-    (this function alone, no training) on a later Kaggle TPU image and
-    it now succeeds cleanly (real mesh object returned, exit code 0) --
-    the underlying torch_xla version was never pinned in this repo, so
-    a base-image update between rounds is the likely explanation.
-    mark_sharding()/a real training run under SPMD is still UNVERIFIED
-    as of round 44 -- do not trust this for a full round until a real
-    isolated smoke test (shard_batch() + a few real gradient steps)
-    confirms it beyond mesh construction (see AGENTS.md round 44)."""
+    Set TRAINTAI_NO_SPMD=1 (the required default for every training
+    kernel) to force this to return None even on a multi-chip pod. SPMD
+    remains CONFIRMED BROKEN on this Kaggle TPU pod: round9tpusmoke
+    v3-v6 first found a real SIGSEGV inside torch_xla's PjRt client
+    during `ExecuteReplicated()`; round 44 found mesh CONSTRUCTION
+    alone (this function, no training) now succeeds on a later base
+    image, but round 45's real training smoke test hit the identical
+    `ExecuteReplicated()` SIGSEGV once real gradient computation ran
+    across the mesh -- the actual sharded-execution path is still
+    broken, only mesh-building itself was fixed upstream. Do not
+    re-attempt SPMD training without a genuinely new signal (see
+    AGENTS.md rounds 44-45)."""
     if os.environ.get("TRAINTAI_NO_SPMD") == "1":
         return None
     n = tpu_chip_count()

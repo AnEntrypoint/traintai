@@ -5464,3 +5464,45 @@ a full round's training. If that also holds, the real payoff is
 training wall-clock roughly 8x faster per round (data-parallel across
 all chips) -- worth pursuing once confirmed, but not yet proven beyond
 mesh construction.
+
+## Round 45: real SPMD training smoke test -- mesh build succeeds, but real training still crashes with the SAME SIGSEGV (2026-08-18)
+
+Ran the gated next step from round 44: a genuine ~20-step training run
+with `TRAINTAI_NO_SPMD` unset (so `train.py`'s existing
+`setup_spmd_mesh()`/`shard_batch()` wiring activates for real),
+compared directly against the same config with SPMD disabled.
+
+**Real result: SPMD training still crashes.** `SPMD mesh active:
+sharding batches across 8 XLA chips` printed (confirming mesh
+construction + the first `shard_batch()` call succeeded), but the run
+then hit `exit code: -11` (SIGSEGV) at wall-clock 64.1s, inside the
+EXACT SAME real crash site round9tpusmoke v3-v6 first found:
+`torch_xla::runtime::PjRtComputationClient::ExecuteReplicated()`. So
+round 44's finding that mesh CONSTRUCTION now succeeds was real, but
+insufficient -- the actual sharded-execution path
+(`ExecuteReplicated()`, invoked once real gradient computation needs
+to run across the mesh) remains broken on this pod, unchanged from the
+original 2026-08-07 finding. The single-chip baseline (identical
+config, `TRAINTAI_NO_SPMD=1`) completed cleanly: `exit code: 0`, 20
+real steps in 42.1s (`val=10.3750 ppl=32047.00`), no different from
+this campaign's established single-chip performance.
+
+**Practical conclusion: SPMD remains genuinely not usable on this
+Kaggle TPU pod.** This is a real, confirmed, upstream torch_xla/PjRt
+bug reproducing identically across two independent test rounds
+five-plus days apart, through at least one intervening base-image
+update (round 44's mesh-construction fix). `TRAINTAI_NO_SPMD=1`
+(forced single-chip) remains the only viable training path and should
+stay the default for every future training kernel -- do not re-attempt
+SPMD training again without a genuinely new signal (e.g. a torch_xla
+release note fixing this specific `ExecuteReplicated()` crash class).
+Both real 8-chip-utilization levers investigated this session
+(SPMD training, the 8-way subprocess parallel launcher) are now
+confirmed broken by real, independently-reproduced crashes -- the
+"7/8 chips idle" gap identified at the start of this investigation
+remains real and unresolved, but is not fixable from this project's
+side without an upstream torch_xla fix. Closing this investigation
+thread; the campaign's real per-round training speed (already fast,
+~1-2 minutes for 600 real steps on a single chip) was never actually
+the bottleneck this whole session -- BALROG action-vocabulary accuracy
+was.
