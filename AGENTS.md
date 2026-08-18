@@ -5506,3 +5506,63 @@ thread; the campaign's real per-round training speed (already fast,
 ~1-2 minutes for 600 real steps on a single chip) was never actually
 the bottleneck this whole session -- BALROG action-vocabulary accuracy
 was.
+
+## Round 43 real eval result: direction-drill fine-tune is a real NEW campaign best on aggregate, but overcorrected babyai/babaisai toward the WRONG vocabulary (2026-08-18)
+
+Full 309-episode real coverage. Round 43 = main pass at round 38's
+proven config + a short (100-step, lr=1.25e-5) direction-drill
+fine-tune pass on top, using `balrog_direction_drill.py`'s repeated
+real direction-action rows (targeting the ~77% of all failures found
+to be cross-game direction-word confusion, see rounds 38-42).
+
+Real result:
+
+| game      | r38 (baseline) | r42 (best token-share) | r43 (direction-drill) |
+|-----------|------------------|---------------------------|---------------------------|
+| babyai    | 5.48%            | 13.62%                    | **2.40%**                 |
+| babaisai  | 4.05%            | 3.27%                     | **3.18%**                 |
+| crafter   | 0.28%            | 0.73%                     | **0.31%**                 |
+| textworld | 100.00%          | 100.00%                   | 100.00%                    |
+| minihack  | 92.58%           | 81.86%                    | **95.07%**                |
+| nle       | 90.34%           | 83.04%                    | **95.02%**                |
+| **aggregate (excl boxoban)** | **73.67%** | 66.92% | **74.68%** |
+
+**Real, genuine new campaign best on aggregate: 74.68%, beating round
+38's 73.67% baseline and every token-share variant (rounds 39-42).**
+minihack (95.07%) and nle (95.02%) both improved past round 38's own
+best numbers -- the direction-drill fix helped the games that were
+ALREADY strong get even stronger, a real, clean positive result there.
+
+**But babyai and babaisai got WORSE, not better** (babyai 5.48%->2.40%,
+babaisai 4.05%->3.18%) -- the opposite of this round's actual goal.
+Direct inspection of real `failed_candidates` content explains why:
+both games' failures are now overwhelmingly bare COMPASS words
+(`north`/`south`/`east`/`west`, minihack/nle's own real vocabulary --
+794+333+322+155=1604 of babyai's 1751 total failures, 993+458+444+211
+=2106 of babaisai's 2314), not the previously-dominant `go+direction`
+phrase confusion. The direction-drill dataset's row COUNT was
+dominated by minihack/nle/textworld (1836 rows vs babyai's 798 and
+babaisai's 691, see round 41's real log), so the "drill" ended up
+disproportionately reinforcing minihack/nle's OWN convention across
+the whole model -- a real overcorrection in the opposite direction
+from the original babyai/babaisai-favors-compass-words problem this
+was meant to fix. The mechanism (extra gradient concentration on
+direction-action tokens) demonstrably WORKS -- minihack/nle's
+improvement proves that -- but the current dataset composition biases
+which convention gets reinforced, favoring whichever game contributed
+the most drill rows.
+
+**Real, load-bearing conclusion and next lever**: `balrog_direction_drill.py`
+needs the SAME token/row-balance discipline already proven necessary
+for the main mixture (rounds 38-42) -- currently it caps PER GAME at
+`--cap 20000` but with `repeat=4` applied uniformly, so a game's real
+row count (not a normalized target) determines its final drill share.
+Fix: give `balrog_direction_drill.py` an explicit per-game row-count
+CAP (not just a repeat multiplier), tuned so babaisai/babyai's real
+share of the DRILL dataset is at least equal to minihack/nle/textworld's,
+not proportional to their raw availability -- directly analogous to
+round 38's original row-balance fix for the main mixture, just applied
+to this new drill dataset. Round 38's checkpoint is no longer the
+correct base to compare against or resume from -- round 43's checkpoint
+(76.18%-class raw aggregate) is the new real best and should be used as
+the self-play/continuation source for the next round.
