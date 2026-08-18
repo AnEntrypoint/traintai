@@ -21,6 +21,15 @@ Arms:
                  embedding capacity would do.
   bigcore     -- spend the table budget on a wider core instead. Reference for
                  how much a thin core is actually costing us.
+  liquid      -- replaces the PLE per-layer gate with a Liquid Time-Constant
+                 (LTC/CfC, Hasani et al.) update: the per-layer conditioning
+                 term is a leaky-integrator step whose own time-constant is a
+                 learned function of the current input, so the effective
+                 update RATE (not just the value) adapts per token -- closer
+                 to what "liquid" means in the liquid-neural-network
+                 literature than a fixed-function gate. Same slot as `ple`
+                 (attention/FFN untouched, same core-budget solve), so this
+                 is a direct swap-in comparison, not a new architecture.
 """
 
 import math
@@ -49,7 +58,11 @@ class Config:
 
     @property
     def uses_per_layer(self):
-        return self.arm in ("ple", "ple_notable")
+        return self.arm in ("ple", "ple_notable", "liquid")
+
+    @property
+    def uses_liquid(self):
+        return self.arm == "liquid"
 
     @property
     def table_width(self):
@@ -141,6 +154,46 @@ class SwiGLU(nn.Module):
         return self.down(F.silu(self.gate(x)) * self.up(x))
 
 
+class LiquidGate(nn.Module):
+    """Liquid Time-Constant per-layer conditioning (Hasani et al., "Liquid
+    Time-constant Networks" / closed-form CfC). Same slot as PLE's
+    ple_gate/ple_proj pair -- squeeze x to ple_dim, combine with the
+    per-layer input `ple`, project back, add to the residual -- but the
+    combination is a single discretized leaky-integrator step whose own
+    rate is a learned function of the CURRENT input, not a fixed
+    elementwise multiply:
+
+        drive = tanh(W_f [x_proj ; ple] + b_f)       # what the state moves toward
+        tau   = softplus(W_tau [x_proj ; ple] + b_tau) + tau_min  # how fast, input-dependent
+        h_new = x_proj + (drive - x_proj) / tau
+
+    This is the real distinguishing property of a liquid network vs a
+    fixed-function gate: tau itself varies per token/input, so the
+    effective update RATE adapts, not just the gated value (a plain PLE
+    multiply can zero a signal but can't change how fast the state
+    relaxes toward a new one). tau_min=0.1 keeps 1/tau bounded (softplus
+    can approach 0), matching CfC's own clamped-timescale practice so a
+    pathological tau doesn't blow up the residual early in training."""
+
+    TAU_MIN = 0.1
+
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.x_proj = nn.Linear(cfg.d_model, cfg.ple_dim, bias=False)
+        self.drive = nn.Linear(2 * cfg.ple_dim, cfg.ple_dim)
+        self.tau = nn.Linear(2 * cfg.ple_dim, cfg.ple_dim)
+        self.out_proj = nn.Linear(cfg.ple_dim, cfg.d_model, bias=False)
+        self.out_norm = RMSNorm(cfg.d_model)
+
+    def forward(self, x, ple):
+        h = self.x_proj(x)
+        combined = torch.cat([h, ple], dim=-1)
+        drive = torch.tanh(self.drive(combined))
+        inv_tau = 1.0 / (F.softplus(self.tau(combined)) + self.TAU_MIN)
+        h_new = h + (drive - h) * inv_tau
+        return self.out_norm(self.out_proj(h_new))
+
+
 class Block(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -149,7 +202,9 @@ class Block(nn.Module):
         self.attn = Attention(cfg)
         self.ffn_norm = RMSNorm(cfg.d_model)
         self.ffn = SwiGLU(cfg)
-        if cfg.uses_per_layer:
+        if cfg.uses_liquid:
+            self.liquid_gate = LiquidGate(cfg)
+        elif cfg.uses_per_layer:
             # Gemma 4's Gemma4TextDecoderLayer, minus AltUp: squeeze the hidden
             # state to ple_dim, gate it elementwise *by* the per-layer input,
             # project back, norm, add to the residual. The multiply is what makes
@@ -163,8 +218,11 @@ class Block(nn.Module):
         x = x + self.attn(self.attn_norm(x), cos, sin, attn_mask)
         x = x + self.ffn(self.ffn_norm(x))
         if ple is not None:
-            g = F.gelu(self.ple_gate(x))
-            x = x + self.ple_norm(self.ple_proj(g * ple))
+            if self.cfg.uses_liquid:
+                x = x + self.liquid_gate(x, ple)
+            else:
+                g = F.gelu(self.ple_gate(x))
+                x = x + self.ple_norm(self.ple_proj(g * ple))
         return x
 
 
@@ -208,7 +266,9 @@ class TinyLM(nn.Module):
             # the norm gain makes the branch start as an exact no-op, so every arm
             # begins from the same function and the comparison measures learning
             # rather than initialisation luck.
-            if cfg.uses_per_layer:
+            if cfg.uses_liquid:
+                nn.init.zeros_(block.liquid_gate.out_norm.weight)
+            elif cfg.uses_per_layer:
                 nn.init.zeros_(block.ple_norm.weight)
 
         cos, sin = build_rope(cfg.seq_len, cfg.head_dim, cfg.rope_theta, "cpu")

@@ -90,7 +90,7 @@ def main():
     ap.add_argument(
         "--arm",
         required=True,
-        choices=["baseline", "ple", "ple_notable", "fatembed", "bigcore"],
+        choices=["baseline", "ple", "ple_notable", "fatembed", "bigcore", "liquid"],
     )
     ap.add_argument("--target-core", type=int, default=1_500_000)
     ap.add_argument("--steps", type=int, default=4000)
