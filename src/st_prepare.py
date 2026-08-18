@@ -84,6 +84,8 @@ BALROG_DEMOS_CAP = int(os.environ.get("BALROG_DEMOS_CAP", 3000))  # balrog_demo_
 BALROG_ROW_MASKING = os.environ.get("BALROG_ROW_MASKING", "1") == "1"  # mask the PROMPT portion of every BALROG demo/self-play row's loss (ignore_index=-1 via a parallel mask.bin), so gradient concentrates on the completion tokens (the action) instead of being diluted across each row's huge Observation/instruction prompt. The real, measured-necessary fix (2026-08-10) after BALROG_DEMOS_CAP alone was shown to not move real parse-success rate at all across rounds 9/13/14 (~5-7%, flat). Disable via env var to isolate/compare against the unmasked baseline.
 BALROG_DEMOS_ONLY = os.environ.get("BALROG_DEMOS_ONLY", "") == "1"  # when set, skip every other source and TinyStories entirely -- an isolation-test mixture of pure BALROG demo data, for measuring whether diluting demo data with the rest of the mixture is itself a lever
 BALROG_SELFPLAY_CAP = int(os.environ.get("BALROG_SELFPLAY_CAP", 1500))  # balrog_selfplay_convert.py output: our OWN checkpoint's real self-play rollouts, filtered to episode_return>0 -- a rejection-sampling flywheel on top of the expert-demo bootstrap, same self-distillation-limit convention as FORGE_CAP/ACTION_FORGE_CAP
+DIRECTION_DRILL_CAP = int(os.environ.get("DIRECTION_DRILL_CAP", 20000))  # balrog_direction_drill.py output: real direction-action rows from balrog_demos.jsonl, heavily repeated, targeting the ~77% of ALL failed BALROG actions (rounds 38-42, see AGENTS.md) that are the model confusing babaisai/minihack-nle/crafter's competing direction-word conventions -- a real learned-weight bias, not a mixture-share problem (5 rounds of share-tuning already ruled that out).
+BALROG_DIRECTION_DRILL_ONLY = os.environ.get("BALROG_DIRECTION_DRILL_ONLY", "") == "1"  # when set, build a PURE direction-drill mixture (nothing else) for a short dedicated low-LR fine-tune pass, isolated from the rest of the mixture so it concentrates gradient purely on the confused decision
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -392,9 +394,45 @@ def main():
                 if n_balrog_selfplay >= BALROG_SELFPLAY_CAP:
                     break
 
+    # Real finding (rounds 38-42, 2026-08-18, see AGENTS.md): real
+    # per-episode eval data shows ~77% of ALL failed BALROG actions across
+    # every game are one of two things -- a bare compass word
+    # (north/east/south/west) or a "go X" phrase -- i.e. the model
+    # confuses babaisai's/minihack-nle's/crafter's/babyai's competing
+    # direction-word conventions, even though the correct action list is
+    # always present in-context (balrog_server.py's truncate_prompt_ids()
+    # already guarantees the instruction survives truncation -- this is a
+    # genuine learned-weight bias, not a missing-information problem).
+    # Five real mixture-SHARE experiments (row-count and token-count
+    # balancing, uniform and per-game) all failed to fix this -- the lever
+    # is the wrong axis. balrog_direction_drill.py extracts and heavily
+    # repeats just the real direction-action steps from balrog_demos.jsonl,
+    # for a short dedicated low-LR fine-tune pass (BALROG_DIRECTION_DRILL_ONLY)
+    # that concentrates many extra gradient updates on the confused
+    # decision specifically, without touching overall mixture balance.
+    n_direction_drill = 0
+    direction_drill = []
+    direction_drill_path = os.path.join(NPC, "balrog_direction_drill.jsonl")
+    if os.path.exists(direction_drill_path):
+        for row in read_jsonl(direction_drill_path):
+            if clean(row["text"]):
+                direction_drill.append(row["text"])
+                n_direction_drill += 1
+                if n_direction_drill >= DIRECTION_DRILL_CAP:
+                    break
+
     balrog_row_flags = []  # parallel to texts: True for BALROG demo/self-play rows, used to build the loss mask below
 
-    if BALROG_DEMOS_ONLY:
+    if BALROG_DIRECTION_DRILL_ONLY:
+        # Isolation mixture for the dedicated direction-drill fine-tune
+        # pass: ONLY the repeated direction-action rows, nothing else --
+        # the short low-LR continued-training stage this is meant for
+        # should not also be diluted by/relearning the rest of the mixture.
+        texts = list(direction_drill)
+        balrog_row_flags = [True] * len(texts)
+        tmpl = []
+        print(f"BALROG_DIRECTION_DRILL_ONLY=1 -- direction_drill {n_direction_drill} | total {len(texts)}")
+    elif BALROG_DEMOS_ONLY:
         # Isolation-test mixture: pure BALROG demo data, nothing else,
         # no TinyStories -- measures whether the rest of the mixture
         # dilutes/interferes with format-learning from demo data alone,
@@ -457,7 +495,7 @@ def main():
     if BALROG_ROW_MASKING:
         print(f"loss-masked {n_masked_rows} BALROG rows, {n_masked_tokens / 1e6:.2f}M prompt tokens excluded from loss")
 
-    if not BALROG_DEMOS_ONLY:
+    if not BALROG_DEMOS_ONLY and not BALROG_DIRECTION_DRILL_ONLY:
         ts = np.memmap(os.path.join(DATA, "train_v32768.bin"), dtype=np.uint16, mode="r")
         ts_ids = ts[:TINYSTORIES_TOKENS].tolist()
         ids.extend(ts_ids)
