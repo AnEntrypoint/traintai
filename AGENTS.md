@@ -5243,3 +5243,75 @@ game rather than one shared frac; or (b) abandon the shared-frac
 approach entirely and set each game's target share independently,
 informed by round 39/40's real per-game response curves now that two
 real data points exist per game.
+
+## Round 41: per-game override (crafter zeroed) real result -- WORSE than every prior round, a genuinely surprising negative finding (2026-08-18)
+
+Implemented `BALROG_TOKEN_TARGET_SHARE` (per-game direct share override,
+JSON env var) in `st_prepare.py`, verified locally matching the real
+Kaggle log exactly: `babyai=798rows/702372tok, crafter=0rows/0tok,
+babaisai=691rows/825677tok, minihack_nle_textworld=1836rows/3628246tok`
+-- babyai 13.6%, babaisai 16.0%, crafter fully zeroed (reallocated
+since round 40 showed it doesn't respond to token share at all),
+minihack/nle/textworld returned to their natural ~70.4% share (since
+round 40 showed they degrade in an accelerating, not front-loaded, way
+as their share shrinks). The hypothesis: keep minihack/nle at their
+safe natural share while still giving babyai/babaisai enough budget to
+cross their real threshold.
+
+Real result, full 309-episode coverage:
+
+| game      | r38 (natural) | r39 (equal) | r40 (frac=0.5) | r41 (override) |
+|-----------|----------------|--------------|------------------|-------------------|
+| babyai    | 5.48%          | 41.25%       | 17.20%           | **9.16%**         |
+| babaisai  | 4.05%          | 14.48%       | 4.35%            | **12.92%**        |
+| crafter   | 0.28%          | 0.26%        | 0.32%            | **0.16%**         |
+| textworld | 100.00%        | 100.00%      | 100.00%          | 100.00%           |
+| minihack  | 92.58%         | 65.82%       | 85.29%           | **52.91%**        |
+| nle       | 90.34%         | 71.84%       | 81.63%           | **52.25%**        |
+| **aggregate (excl boxoban)** | **73.67%** | **60.02%** | **68.04%** | **45.96%** |
+
+This is a real, honest, and genuinely surprising negative result --
+worse than EVERY prior round tested, including round 39's fully-equal
+share (which at least gave minihack/nle their worst share of the four
+configs). babyai partially benefited (9.16% vs r38's 5.48%) and
+babaisai clearly benefited (12.92% vs r38's 4.05%, its best result
+after round 39), but minihack/nle collapsed far beyond what returning
+them to their "safe" natural TOKEN share should predict (52.91%/52.25%,
+both WORSE than round 40's frac=0.5 config, which taxed them MORE
+token-share-wise than round 41 did).
+
+The real balrog_demos row totals across rounds rule out simple
+row-count dilution as the explanation: r38=3000, r40=3451, r41=3325
+(798+691+1836) -- r41's total is close to r39's and not dramatically
+below r40's, so this is not just "fewer BALROG rows overall."
+
+**Real, load-bearing conclusion: crafter's rows were not simply inert
+padding -- entirely REMOVING them (not just shrinking their share)
+damaged minihack/nle's performance far more than any share-shrinkage
+experiment predicted.** This means the earlier framing ("crafter is
+flat/unresponsive to token share, so reallocate its budget") was
+correct about crafter's OWN accuracy but wrong to conclude its rows
+were fungible/replaceable -- crafter's demo rows likely provide some
+real regularization or format-diversity value to the shared model that
+benefits minihack/nle/babyai/babaisai's shared "stop-after-action"
+skill, separate from whether crafter itself ever learns its own
+correct action vocabulary. Zeroing it out entirely was the wrong
+experiment; shrinking-but-not-zeroing was never actually tested.
+
+Practical conclusion: round 38's checkpoint (76.18%/73.67%) remains
+the real, unambiguous campaign best across all five rounds tested
+(38/39/40/41) -- no token-share variant of any kind has beaten it yet.
+The token-share lever family (rounds 39-41) is now well-explored at
+four real data points and should be considered largely exhausted for
+further blind uniform/interpolated/override experiments; the next real
+lever should either (a) test a NON-ZERO but reduced crafter share
+(e.g. half its natural ~15.9%, redirected partially rather than
+entirely to babyai/babaisai) to isolate whether crafter's regularizing
+value scales with share or is roughly all-or-nothing, or (b) abandon
+the token-share axis for babaisai/babyai/crafter and pursue a
+different, non-mixture-composition lever entirely (e.g. per-game
+prompt/format hardening, a dedicated small SFT pass on just these three
+games' demos before the shared mixture, or investigating whether the
+model's context window is simply too crowded by minihack/nle's much
+longer real observation text to reliably retain the shorter games'
+distinct format).
