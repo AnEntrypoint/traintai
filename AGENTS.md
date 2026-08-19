@@ -5784,3 +5784,67 @@ redirected to babaisai/babyai specifically (not minihack/nle, which
 this round shows already suffers when its own share shrinks) --
 a genuinely promising, not-yet-tested combination given round 48's
 real babyai/babaisai surge.
+
+## Round 49: crafter-minimized/babaisai-maximized config -- real improvement over round 48, but does NOT beat round 46's campaign best; babyai's surge did not reproduce (2026-08-19)
+
+Tested the combination motivated by round 48: crafter minimized (5%),
+babaisai maximized (65%), minihack_nle_textworld protected (30%).
+Real, verified via log: `game_share={'babaisai': 0.65, 'crafter': 0.05,
+'minihack_nle_textworld': 0.29999999999999993}`, both training stages
+completed cleanly, self-play from round 46's real best. (Also found
+and fixed a real silent-drop bug in `--game-share` while designing this
+config: passing a non-existent game key like "babyai" silently
+consumed its share with no output/error -- now raises SystemExit
+naming the real keys, commit `b35f07f`.)
+
+Real eval result (full 309-episode coverage):
+
+| game      | r38 (baseline) | r46 (75.99%, best) | r48 (crafter 50%) | r49 (crafter 5%/babaisai 65%) |
+|-----------|------------------|------------------------|------------------------|-----------------------------------|
+| babyai    | 5.48%            | 4.52%                   | 25.20%                  | **3.85%**                          |
+| babaisai  | 4.05%            | 1.46%                   | 14.33%                  | **12.85%**                         |
+| crafter   | 0.28%            | 0.15%                   | 0.37%                   | **0.34%**                          |
+| textworld | 100.00%          | 100.00%                 | 100.00%                 | 100.00%                             |
+| minihack  | 92.58%           | 95.63%                  | 88.46%                  | **92.85%**                         |
+| nle       | 90.34%           | 95.30%                  | 86.62%                  | **92.90%**                         |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | 72.33% | 75.51% |
+
+**Real, honest, mixed result.** Aggregate (75.51%) is a real
+improvement over round 48's 72.33%, confirming minihack/nle mostly
+recover when their own share is protected at 30% -- but it does NOT
+beat round 46's real campaign best (75.99%). babaisai held a real,
+substantial gain (12.85%, close to round 47's 6.90%, though below
+round 48's 14.33% peak), consistent with its threshold behavior
+responding to a large (not necessarily maximal) share.
+
+**But babyai's dramatic round-48 surge (25.20%) almost entirely
+evaporated this round (3.85%)** -- this is the single most important
+real finding here: round 48's babyai surge was NOT simply caused by
+"cutting crafter's share" as hypothesized. Something specific to round
+48's exact configuration (crafter at 50%, babyai/babaisai/
+minihack_nle_textworld splitting the remaining 50% EQUALLY at ~16.7%
+each) produced babyai's real gain -- round 49's different split
+(babyai getting a smaller, unprotected residual share once babaisai
+took 65%) did not reproduce it. This means babyai's real response
+shape is not yet understood; it may itself have threshold/interaction
+behavior with the OTHER games' shares, not a simple function of its
+own share size.
+
+**Practical conclusion**: round 46's checkpoint (75.99%) remains the
+real, unambiguous campaign best after 12 real rounds of token-share/
+drill-share experimentation (38-49). The direction-drill lever family
+has now been tested at enough real configurations (natural, equal,
+babaisai-weighted at 50%/65%, crafter-weighted at 50%, crafter-
+minimized) to conclude: babaisai responds reliably to large share
+(rounds 47/48/49 all show real gains at >=50% babaisai-adjacent
+configs), crafter never responds to any share tested, minihack/nle
+need their own share protected near or above natural (~25-30%), and
+babyai's response is NOT simply inverse to crafter's share -- it may
+need its own dedicated isolated test (fixing babaisai/crafter/minihack/
+nle at known-safe values and varying ONLY babyai's share) to properly
+characterize, rather than being read as a side effect of other games'
+allocations. Given 12 rounds without beating round 46, the direction-
+drill share axis is likely approaching its own real ceiling for further
+uniform-style search; a genuinely new lever (e.g. babyai's own isolated
+share sweep, or moving beyond the drill-share axis entirely) is the
+next real decision point.
