@@ -52,12 +52,17 @@ DEFAULT_CAP = 20000
 # Real direction-word action sets per game, verbatim from
 # balrog_demo_convert.py's _BABAISAI_ACTIONS/_MINIHACK_ACTIONS/
 # _CRAFTER_ACTION_DICT keys (babyai's own directions are phrase-shaped,
-# "go forward"/"turn left", not bare words, so it is not part of the
-# bare-direction-word confusion class this drill targets).
+# "go forward"/"turn left", not bare words -- but round 49's real
+# failure data (see AGENTS.md) shows babyai is EQUALLY vulnerable to
+# the same compass-word/go+direction confusion as every other game
+# (1775 real failures, 87% bare compass words or "go X" phrases) --
+# it just had no drill signal of its own to correct it. Added below
+# with its own real phrase-shaped targets.
 DIRECTION_ACTIONS = {
     "babaisai": {"up", "down", "left", "right"},
     "crafter": {"Move North", "Move South", "Move East", "Move West"},
     "minihack_nle_textworld": {"north", "south", "east", "west"},
+    "babyai": {"go forward", "turn left", "turn right"},
 }
 
 GAME_MARKERS = [
