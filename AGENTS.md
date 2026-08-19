@@ -5916,3 +5916,60 @@ options for a genuinely NEW lever, none yet tested:
 This investigation arc (rounds 38-50) is closed pending a genuinely
 new hypothesis; round 46's checkpoint is the correct base for all
 future work.
+
+## Round 51: protecting minihack/nle share (option 1 from round 50) tested -- does NOT beat round 46, investigation arc definitively closed (2026-08-19)
+
+Tested round 50's own option 1: protect minihack/nle's share above the
+4-way-equal 25% split while keeping babyai/babaisai real drill signal.
+Config: `--game-share '{"minihack_nle_textworld": 0.35, "babaisai":
+0.30, "babyai": 0.25, "crafter": 0.10}'`. Verified locally before
+launch (babaisai=6000, crafter=2000, minihack_nle_textworld=7000,
+babyai=5000, summing to cap=20000) and confirmed via the real training
+log that the drill build used exactly this `game_share` (no silent
+drop, no `--repeat` regression -- both stages exited 0).
+
+Real eval result (full 309-episode coverage, all 6 games including
+192 minihack episodes):
+
+| game      | r38 (baseline) | r46 (75.99%, best) | r50 (74.25%) | r51 (this round) |
+|-----------|------------------|------------------------|--------------------|------------------------|
+| babyai    | 5.48%            | 4.52%                   | 12.61%              | 4.62%                   |
+| babaisai  | 4.05%            | 1.46%                   | 5.03%                | 3.63%                   |
+| crafter   | 0.28%            | 0.15%                   | 0.32%                | 0.79%                   |
+| textworld | 100.00%          | 100.00%                 | 100.00%              | 100.00%                 |
+| minihack  | 92.58%           | 95.63%                  | 90.04%               | 89.90%                  |
+| nle       | 90.34%           | 95.30%                  | 89.85%               | 89.34%                  |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | 74.25% | 71.84% |
+
+**Real, honest finding: this does NOT work as hypothesized.** Giving
+minihack/nle a larger protected share (35% vs the 4-way-equal 25%)
+did NOT recover their round-46 performance (89.90%/89.34% here vs
+95.63%/95.30% at round 46) -- they landed close to round 50's numbers
+instead, meaning minihack/nle's real sensitivity is not simply "more
+share = better" in a way that scales past whatever round 46's original
+3-way (pre-babyai) split achieved. Meanwhile babyai's real drill
+signal, which was strong at an equal 25% share (round 50: 12.61%),
+COLLAPSED back down to near-round-46 levels (4.62%) at 25% share here
+too -- ruling out "babyai just needs 25%" as the mechanism; something
+about round 50's specific 4-way-equal configuration (not babyai's raw
+share number) was what let babyai's signal actually land. babaisai
+also regressed from round 50 (5.03%->3.63%). Aggregate (71.84%) is the
+worst result of any equal-or-near-equal drill-share round in the
+campaign, below even round 38's plain baseline.
+
+**Practical, final conclusion**: round 50's own proposed option 1 has
+now been tested and rejected -- it does not beat round 46, and does not
+even beat round 50. Both of round 50's stated next-lever options are
+now exhausted (option 1 tested here; option 2, moving beyond the
+drill-share axis, remains the only untested direction). Combined with
+13 prior rounds (38-50) of exhaustive real share-tuning, the
+direction-drill mixture-composition axis is now conclusively closed:
+round 46's checkpoint (75.99%) is the confirmed campaign best across
+14 real rounds (38-51), and no further share-tuning variant should be
+attempted without a genuinely new mechanism (not a new share number).
+Next real lever candidates: (a) the `liquid` arm in `model.py` (Liquid
+Time-Constant/CfC gating, implemented and locally verified this
+campaign but never tested on real Kaggle TPU hardware), (b) a
+non-mixture-composition intervention on the confused decision itself
+(constrained decoding, contrastive/negative-example training signal)
+rather than further row-share search.
