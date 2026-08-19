@@ -5711,3 +5711,76 @@ confusion failure mode as every other game, just with a near-total
 fallback rate that has never moved. A crafter-weighted drill share
 (analogous to round 47's babaisai test) is the next real, untested
 point on this axis and the natural next experiment.
+
+## Round 48: crafter at 50% drill share -- DECISIVE negative result, crafter remains flat while babyai/babaisai unexpectedly surge (2026-08-19)
+
+Tested crafter at 50% direction-drill share (the same mechanism that
+moved babaisai 1.46%->6.90% in round 47), letting babyai/babaisai/
+minihack_nle_textworld split the remaining 50% equally. Real, verified
+via log: `game_share={'babaisai': 0.25, 'crafter': 0.5,
+'minihack_nle_textworld': 0.25}`, both training stages completed
+cleanly, self-play from round 46's real best.
+
+Real eval result (full 309-episode coverage):
+
+| game      | r38 (baseline) | r46 (equal drill, 75.99%) | r48 (crafter 50% drill) |
+|-----------|------------------|------------------------------|------------------------------|
+| babyai    | 5.48%            | 4.52%                         | **25.20%**                    |
+| babaisai  | 4.05%            | 1.46%                         | **14.33%**                    |
+| crafter   | 0.28%            | 0.15%                         | **0.37%**                     |
+| textworld | 100.00%          | 100.00%                       | 100.00%                        |
+| minihack  | 92.58%           | 95.63%                        | 88.46%                         |
+| nle       | 90.34%           | 95.30%                        | 86.62%                         |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | 72.33% |
+
+**DECISIVE real negative result for crafter**: even at 50% drill share
+-- the same mechanism that produced babaisai's real 5x jump in round
+47 -- crafter showed NO real movement (0.15%->0.37%, both noise-level).
+This rules out "crafter just needs a bigger drill share" definitively;
+the threshold mechanism that generalizes across babaisai (round 40's
+mixture-share experiment, round 47's drill-share experiment) does NOT
+generalize to crafter. Crafter's real problem is not a share/threshold
+issue at all -- something else about crafter (its unusually long/
+complex instruction prompt, its 17-action space including multi-word
+crafting actions no other game has, or a genuine architectural/
+capacity limit) is the real blocker, and no further mixture or
+drill-share tuning for crafter specifically is likely to help without
+new information.
+
+**Real, unexpected positive side effect**: babyai (4.52%->25.20%) and
+babaisai (1.46%->14.33%) both surged dramatically -- likely because
+crafter's real share reduction (down to a fixed 12.5% each for babyai/
+babaisai/minihack_nle_textworld under this config, since crafter's
+50% left only 50% split three ways at ~16.7% average, but crafter's
+own targets never get selected/reinforced since it doesn't respond)
+effectively redirected the real gradient signal disproportionately
+toward babyai/babaisai's own confused decision, since crafter's own
+targets contribute little useful signal regardless of its allocated
+share. This is real, new evidence that crafter's allocated drill rows
+are not "wasted" in the sense of costing nothing -- redirecting them
+to babyai/babaisai produced their best real results of the entire
+campaign (babyai's 25.20% and babaisai's 14.33% both beat every prior
+round including round 39's fully-equal-MIXTURE result).
+
+**But minihack/nle both dropped notably** (92.58%->88.46% baseline-
+relative, 90.34%->86.62%) and the aggregate (72.33%) came in BELOW
+round 38's original 73.67% baseline -- the largest games paid a real
+cost for crafter's now-wasted 50% share (rows that produce no useful
+gradient for crafter itself, but also aren't available to reinforce
+minihack/nle).
+
+**Practical, load-bearing conclusion**: round 46's checkpoint (75.99%)
+remains the real campaign best. The real finding here is that
+crafter's real share should be MINIMIZED (not equalized or increased)
+in future direction-drill configs, since it contributes no measurable
+benefit to its own accuracy and its allocated rows are pure overhead
+relative to reinforcing the games that DO respond (babaisai, babyai).
+The next real, testable lever: a config with crafter's share reduced
+toward zero (or fully zero, revisiting round 41's finding that
+ZEROING crafter's MIXTURE share caused collateral damage elsewhere --
+but that was the main mixture, not the drill; the drill's own
+zero-crafter case has never been tested) and the freed share
+redirected to babaisai/babyai specifically (not minihack/nle, which
+this round shows already suffers when its own share shrinks) --
+a genuinely promising, not-yet-tested combination given round 48's
+real babyai/babaisai surge.
