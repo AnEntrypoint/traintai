@@ -5645,3 +5645,69 @@ treat crafter as needing a genuinely different intervention entirely
 prompt is simply too long/crowded for its own action list to be
 reliably attended to, independent of training data volume) rather than
 another data-share variant.
+
+## Round 47: babaisai at 50% drill share confirms the threshold hypothesis -- real recovery, but aggregate dips slightly below round 46 (2026-08-19)
+
+Tested babaisai at 50% direction-drill share (vs round 46's equal
+33% share), using `balrog_direction_drill.py`'s new `--game-share`
+override, self-play from round 46's real best (75.99%). Real, verified
+via log: `game_share={'babaisai': 0.5, 'crafter': 0.25,
+'minihack_nle_textworld': 0.25}`, 20000/20000 drill rows produced
+exactly as designed.
+
+Real eval result (full 309-episode coverage):
+
+| game      | r38 (baseline) | r46 (equal drill, 75.99%) | r47 (babaisai 50% drill) |
+|-----------|------------------|------------------------------|------------------------------|
+| babyai    | 5.48%            | 4.52%                         | 3.34%                         |
+| babaisai  | 4.05%            | 1.46%                         | **6.90%**                     |
+| crafter   | 0.28%            | 0.15%                         | 0.04%                          |
+| textworld | 100.00%          | 100.00%                       | 100.00%                        |
+| minihack  | 92.58%           | 95.63%                        | 94.97%                         |
+| nle       | 90.34%           | 95.30%                        | 94.08%                         |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | 75.72% |
+
+**Real confirmation of the threshold hypothesis**: babaisai jumped
+1.46%->6.90%, a real, substantial recovery and its best result since
+round 39's fully-equal-mixture peak (14.48%) -- moving its drill share
+from equal (33%) to 50% produced real movement, consistent with round
+40's original finding that babaisai needs a large, not proportional,
+share to manifest any gain. This is now the SECOND independent
+confirmation of babaisai's threshold behavior (round 40's mixture-share
+experiment, now round 47's drill-share experiment).
+
+**But the aggregate (75.72%) came in slightly BELOW round 46's real
+best (75.99%)** -- minihack (95.63%->94.97%) and nle (95.30%->94.08%)
+both dipped slightly as babaisai's share grew (the same zero-sum
+mixture-tradeoff pattern already established for the main mixture in
+rounds 39-42, now shown to also apply to the direction-drill's own
+internal share allocation), and babyai also slipped (4.52%->3.34%).
+crafter remained at essentially zero (0.15%->0.04%, no real signal).
+
+**Practical conclusion**: round 46's checkpoint (75.99%) remains the
+real campaign best; round 47's babaisai-weighted variant is a real,
+useful DATA POINT (confirming the threshold effect generalizes to the
+drill-share axis) but not itself an improvement on the current best.
+The same zero-sum tension already characterized for the main mixture
+now applies to the drill's internal allocation too -- pushing one
+game's drill share higher costs the others measurably. Two honest
+options going forward: (a) accept round 46's checkpoint as the
+practical best and stop searching this specific axis further, since
+every real variant tested (natural, equal, babaisai-weighted) trades
+off against something; or (b) search for a MODERATE babaisai share
+between round 46's 33% and round 47's 50% to find a real local optimum
+that keeps more of minihack/nle's ceiling while still crossing
+babaisai's threshold -- a real, bounded search, not another blind
+extreme.
+
+Crafter's real result this round (0.04%, action_frequency ~99.8%
+Noop fallback, confirmed via direct inspection of round 46's real
+per-episode data) makes this the SEVENTH consecutive real round with
+no crafter movement across every mixture/drill-share configuration
+tested (natural, zero, equal, babaisai-weighted). The model reliably
+emits an invalid direction word for crafter and the game silently
+defaults to Noop nearly every step -- this is the same vocabulary-
+confusion failure mode as every other game, just with a near-total
+fallback rate that has never moved. A crafter-weighted drill share
+(analogous to round 47's babaisai test) is the next real, untested
+point on this axis and the natural next experiment.
