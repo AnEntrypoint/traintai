@@ -191,7 +191,7 @@ def main():
             n = 0
             i = 0
             while n < target_rows[game]:
-                f.write(json.dumps({"text": rows[i % len(rows)]}) + "\n")
+                f.write(json.dumps({"text": rows[i % len(rows)], "game": game}) + "\n")
                 i += 1
                 n += 1
                 total_out += 1

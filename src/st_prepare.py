@@ -86,6 +86,20 @@ BALROG_DEMOS_ONLY = os.environ.get("BALROG_DEMOS_ONLY", "") == "1"  # when set, 
 BALROG_SELFPLAY_CAP = int(os.environ.get("BALROG_SELFPLAY_CAP", 1500))  # balrog_selfplay_convert.py output: our OWN checkpoint's real self-play rollouts, filtered to episode_return>0 -- a rejection-sampling flywheel on top of the expert-demo bootstrap, same self-distillation-limit convention as FORGE_CAP/ACTION_FORGE_CAP
 DIRECTION_DRILL_CAP = int(os.environ.get("DIRECTION_DRILL_CAP", 20000))  # balrog_direction_drill.py output: real direction-action rows from balrog_demos.jsonl, heavily repeated, targeting the ~77% of ALL failed BALROG actions (rounds 38-42, see AGENTS.md) that are the model confusing babaisai/minihack-nle/crafter's competing direction-word conventions -- a real learned-weight bias, not a mixture-share problem (5 rounds of share-tuning already ruled that out).
 BALROG_DIRECTION_DRILL_ONLY = os.environ.get("BALROG_DIRECTION_DRILL_ONLY", "") == "1"  # when set, build a PURE direction-drill mixture (nothing else) for a short dedicated low-LR fine-tune pass, isolated from the rest of the mixture so it concentrates gradient purely on the confused decision
+
+# Real per-game id ordering for the .ul.bin unlikelihood sidecar (round
+# 52's conclusion, AGENTS.md): MUST exactly match train.py's
+# DIRECTION_DRILL_GAME_TOKENS list order (1-indexed there via
+# enumerate(..., start=1)) -- this is the single source of truth for
+# which int the sidecar stores per game, kept here (not imported from
+# train.py) since st_prepare.py must stay import-light for tokenizer-
+# only environments.
+DIRECTION_DRILL_GAME_ID = {
+    "babaisai": 1,
+    "crafter": 2,
+    "minihack_nle_textworld": 3,
+    "babyai": 4,
+}
 TINYSTORIES_TOKENS = 4_000_000
 
 TOXIC = ("i deal in what this place provides",
@@ -412,16 +426,19 @@ def main():
     # decision specifically, without touching overall mixture balance.
     n_direction_drill = 0
     direction_drill = []
+    direction_drill_games = []  # parallel to direction_drill: the row's game label (see balrog_direction_drill.py), used to build the .ul.bin unlikelihood sidecar below
     direction_drill_path = os.path.join(NPC, "balrog_direction_drill.jsonl")
     if os.path.exists(direction_drill_path):
         for row in read_jsonl(direction_drill_path):
             if clean(row["text"]):
                 direction_drill.append(row["text"])
+                direction_drill_games.append(row.get("game"))
                 n_direction_drill += 1
                 if n_direction_drill >= DIRECTION_DRILL_CAP:
                     break
 
     balrog_row_flags = []  # parallel to texts: True for BALROG demo/self-play rows, used to build the loss mask below
+    row_games = []  # parallel to texts: the row's direction-drill game label, or None -- used to build the .ul.bin unlikelihood sidecar below
 
     if BALROG_DIRECTION_DRILL_ONLY:
         # Isolation mixture for the dedicated direction-drill fine-tune
@@ -430,6 +447,7 @@ def main():
         # should not also be diluted by/relearning the rest of the mixture.
         texts = list(direction_drill)
         balrog_row_flags = [True] * len(texts)
+        row_games = list(direction_drill_games)
         tmpl = []
         print(f"BALROG_DIRECTION_DRILL_ONLY=1 -- direction_drill {n_direction_drill} | total {len(texts)}")
     elif BALROG_DEMOS_ONLY:
@@ -439,17 +457,22 @@ def main():
         # a real lever candidate this can't distinguish from without it.
         texts = list(balrog_demos) + list(balrog_selfplay)
         balrog_row_flags = [True] * len(texts)
+        row_games = [None] * len(texts)
         tmpl = []
         print(f"BALROG_DEMOS_ONLY=1 -- balrog_demos {n_balrog_demos} | balrog_selfplay {n_balrog_selfplay} | total {len(texts)}")
     else:
         balrog_row_flags = [False] * len(texts)
+        row_games = [None] * len(texts)
         texts.extend(balrog_demos)
         balrog_row_flags.extend([True] * len(balrog_demos))
+        row_games.extend([None] * len(balrog_demos))
         texts.extend(balrog_selfplay)
         balrog_row_flags.extend([True] * len(balrog_selfplay))
+        row_games.extend([None] * len(balrog_selfplay))
         tmpl = [strip_beats(row["text"]) for row in read_jsonl(os.path.join(NPC, "st_conversations.jsonl")) if clean(row["text"])]
         texts.extend(tmpl[:TEMPLATE_CAP])
         balrog_row_flags.extend([False] * min(len(tmpl), TEMPLATE_CAP))
+        row_games.extend([None] * min(len(tmpl), TEMPLATE_CAP))
         print(f"real {n_real} | authored {n_auth} | world {n_world} | sim {n_sim} | pippa {n_pippa} | "
               f"forge {n_forge} | action_forge {n_action_forge} | chains {n_chains} | "
               f"kaggle_fantasy {n_kaggle_fantasy} | kaggle_wiki {n_kaggle_wiki} | "
@@ -472,9 +495,12 @@ def main():
     n_masked_tokens = 0
     ids = []
     mask = []  # parallel to ids: 1 = trainable, 0 = masked out of loss
+    ul = []  # parallel to ids: 0 = no marker, else the game-id (see DIRECTION_DRILL_GAME_ID below) at the action-start position of a direction-drill row
     ASSISTANT_CUE = "assistant:"
-    for i, (text, enc, is_balrog) in enumerate(zip(texts, encode(texts), balrog_row_flags)):
+    for i, (text, enc, is_balrog, game) in enumerate(zip(texts, encode(texts), balrog_row_flags, row_games)):
         row_mask = [1] * len(enc)
+        row_ul = [0] * len(enc)
+        action_start = None
         if BALROG_ROW_MASKING and is_balrog:
             cue_pos = text.rfind(ASSISTANT_CUE)
             if cue_pos != -1:
@@ -485,34 +511,48 @@ def main():
                     row_mask[:prompt_len] = [0] * prompt_len
                     n_masked_rows += 1
                     n_masked_tokens += prompt_len
+                    action_start = prompt_len
+        if game is not None and game in DIRECTION_DRILL_GAME_ID and action_start is not None and action_start < len(enc):
+            row_ul[action_start] = DIRECTION_DRILL_GAME_ID[game]
         ids.extend(enc)
         mask.extend(row_mask)
+        ul.extend(row_ul)
         ids.append(eot)
         mask.append(1)  # EOT itself stays trainable -- it IS the stop signal
+        ul.append(0)
         if (i + 1) % 10000 == 0:
             print(f"  {i + 1}/{len(texts)}, {len(ids) / 1e6:.1f}M tokens", flush=True)
 
     if BALROG_ROW_MASKING:
         print(f"loss-masked {n_masked_rows} BALROG rows, {n_masked_tokens / 1e6:.2f}M prompt tokens excluded from loss")
+    n_ul_marked = sum(1 for v in ul if v)
+    if n_ul_marked:
+        print(f"unlikelihood-marked {n_ul_marked} direction-drill action-start positions")
 
     if not BALROG_DEMOS_ONLY and not BALROG_DIRECTION_DRILL_ONLY:
         ts = np.memmap(os.path.join(DATA, "train_v32768.bin"), dtype=np.uint16, mode="r")
         ts_ids = ts[:TINYSTORIES_TOKENS].tolist()
         ids.extend(ts_ids)
         mask.extend([1] * len(ts_ids))
+        ul.extend([0] * len(ts_ids))
         print(f"added {TINYSTORIES_TOKENS / 1e6:.1f}M TinyStories tokens; total {len(ids) / 1e6:.1f}M")
 
     arr = np.array(ids, dtype=np.uint16)
     mask_arr = np.array(mask, dtype=np.uint8)
+    ul_arr = np.array(ul, dtype=np.uint8)
     assert len(arr) == len(mask_arr), f"token/mask length mismatch: {len(arr)} vs {len(mask_arr)}"
+    assert len(arr) == len(ul_arr), f"token/ul length mismatch: {len(arr)} vs {len(ul_arr)}"
     n_val = max(1, int(len(arr) * 0.005))
     out_tag = os.environ.get("ST_PREPARE_OUT_TAG", "npc")  # override to build multiple named mixture variants side by side (e.g. lever-sweep runs), without each overwriting the shared default train_npc.bin/val_npc.bin
     arr[:-n_val].tofile(os.path.join(DATA, f"train_{out_tag}.bin"))
     arr[-n_val:].tofile(os.path.join(DATA, f"val_{out_tag}.bin"))
     mask_arr[:-n_val].tofile(os.path.join(DATA, f"train_{out_tag}.mask.bin"))
     mask_arr[-n_val:].tofile(os.path.join(DATA, f"val_{out_tag}.mask.bin"))
+    ul_arr[:-n_val].tofile(os.path.join(DATA, f"train_{out_tag}.ul.bin"))
+    ul_arr[-n_val:].tofile(os.path.join(DATA, f"val_{out_tag}.ul.bin"))
     print(f"train {len(arr) - n_val:,} / val {n_val:,} -> train_{out_tag}.bin/val_{out_tag}.bin "
-          f"(+ .mask.bin sidecar, {mask_arr.mean():.4f} mean trainable-fraction)")
+          f"(+ .mask.bin sidecar, {mask_arr.mean():.4f} mean trainable-fraction) "
+          f"(+ .ul.bin sidecar, {n_ul_marked} marked positions)")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from device import get_device, is_xla, mark_step, optimizer_step, setup_spmd_mesh, shard_batch
 from model import Config, TinyLM, make_model
@@ -15,6 +16,48 @@ from model import Config, TinyLM, make_model
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
 RUNS = os.path.join(HERE, "..", "runs")
+
+# Real per-game first-token vocabulary for the direction-drill confused
+# decision (see balrog_direction_drill.py's DIRECTION_ACTIONS -- these
+# are the leading BPE token, WITH its leading space, of every real
+# direction-action string in each game's own action set; verified via
+# data/bpe32768.json to be single, distinct BPE tokens with no
+# cross-game collisions). game-id 0 is reserved for "no marker" in the
+# .ul.bin sidecar; 1..4 index this list in order.
+DIRECTION_DRILL_GAME_TOKENS = [
+    ("babaisai", [361, 632, 1405, 1113]),          # " up"," down"," left"," right"
+    ("crafter", [12333]),                           # " Move"
+    ("minihack_nle_textworld", [15808, 13622, 6082, 5808]),  # " north"," south"," east"," west"
+    ("babyai", [444, 995]),                          # " go"," turn"
+]
+
+
+def unlikelihood_loss(logits, ul):
+    """Real, direct penalty on the exact confused decision (see AGENTS.md
+    round 52's conclusion): at every position where `ul` marks a
+    direction-drill game-id (1..N), push down the model's probability on
+    every OTHER game's first-token direction words, using the standard
+    unlikelihood-training objective (Welleck et al., "Neural Text
+    Degeneration with Unlikelihood Training") -- -log(1 - p(wrong_token))
+    summed over the wrong-game token set, at marked positions only.
+    Zero contribution at any position where ul==0 (i.e. every non-drill
+    row, and drill rows outside their single action-start position)."""
+    if not (ul > 0).any():
+        return logits.new_zeros(())
+    probs = F.softmax(logits.float(), dim=-1)
+    penalty = logits.new_zeros(())
+    n_marked = 0
+    for game_id, (_, tok_ids) in enumerate(DIRECTION_DRILL_GAME_TOKENS, start=1):
+        pos_mask = ul == game_id
+        if not pos_mask.any():
+            continue
+        n_marked += pos_mask.sum().item()
+        wrong_tok_ids = [t for gid2, (_, ids2) in enumerate(DIRECTION_DRILL_GAME_TOKENS, start=1)
+                          if gid2 != game_id for t in ids2]
+        marked_probs = probs[pos_mask]  # (n_marked_this_game, vocab)
+        p_wrong = marked_probs[:, wrong_tok_ids].sum(dim=-1).clamp(max=1 - 1e-6)
+        penalty = penalty + (-torch.log1p(-p_wrong)).sum()
+    return penalty / max(1, n_marked)
 
 
 class Batcher:
@@ -38,6 +81,15 @@ class Batcher:
         # (identical behavior to before masking existed).
         mask_path = os.path.join(DATA, f"{split}{suffix}.mask.bin")
         self.mask = np.memmap(mask_path, dtype=np.uint8, mode="r") if os.path.exists(mask_path) else None
+        # Optional unlikelihood sidecar (see balrog_direction_drill.py /
+        # st_prepare.py's DIRECTION_DRILL_GAME_TOKENS): same length as
+        # self.data, 0=no marker, 1..N=the confused-decision game-id at
+        # this position (the position immediately after "assistant:" on a
+        # direction-drill row). Absent for non-drill .bin files, in which
+        # case ul is None and train.py's unlikelihood term is skipped
+        # entirely (identical behavior to before this existed).
+        ul_path = os.path.join(DATA, f"{split}{suffix}.ul.bin")
+        self.ul = np.memmap(ul_path, dtype=np.uint8, mode="r") if os.path.exists(ul_path) else None
 
     def __call__(self):
         ix = self.rng.integers(0, len(self.data) - self.sl - 1, self.bs)
@@ -46,14 +98,18 @@ class Batcher:
         if self.mask is not None:
             m = np.stack([self.mask[i + 1 : i + 1 + self.sl] for i in ix]).astype(bool)
             y[~m] = -1
-        return torch.from_numpy(x).to(self.device), torch.from_numpy(y).to(self.device)
+        ul = None
+        if self.ul is not None:
+            ul = np.stack([self.ul[i + 1 : i + 1 + self.sl] for i in ix]).astype(np.int64)
+            ul = torch.from_numpy(ul).to(self.device)
+        return torch.from_numpy(x).to(self.device), torch.from_numpy(y).to(self.device), ul
 
 
 @torch.no_grad()
 def evaluate(model, batcher, iters):
     model.eval()
     batcher.rng = np.random.default_rng(1234)  # same val batches for every arm
-    losses = [model(*batcher())[1].item() for _ in range(iters)]
+    losses = [model(*batcher()[:2])[1].item() for _ in range(iters)]
     model.train()
     return sum(losses) / len(losses)
 
@@ -119,6 +175,11 @@ def main():
                     help="path to a runs/*.pt checkpoint to fine-tune from")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--ul-weight", type=float, default=0.0,
+                     help="weight on the direction-drill unlikelihood term (0 = disabled, "
+                          "identical behavior to before this existed); only active when "
+                          "a matching .ul.bin sidecar is present (built by st_prepare.py "
+                          "from balrog_direction_drill.py's per-row game labels)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -196,10 +257,12 @@ def main():
         if not use_xla_manual_adam:
             for g in opt.param_groups:
                 g["lr"] = lr
-        x, y = train_b()
+        x, y, ul = train_b()
         x, y = shard_batch(x, spmd_mesh), shard_batch(y, spmd_mesh)
         with torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
-            _, loss = model(x, y)
+            logits, loss = model(x, y)
+            if ul is not None and args.ul_weight > 0:
+                loss = loss + args.ul_weight * unlikelihood_loss(logits, ul)
         if use_xla_manual_adam:
             for group in adamw_params:
                 for p in group["params"]:
