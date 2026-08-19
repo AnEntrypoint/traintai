@@ -5973,3 +5973,67 @@ campaign but never tested on real Kaggle TPU hardware), (b) a
 non-mixture-composition intervention on the confused decision itself
 (constrained decoding, contrastive/negative-example training signal)
 rather than further row-share search.
+
+## Round 52: liquid arm real-hardware test -- catastrophic real failure, NOT a viable checkpoint (2026-08-19)
+
+First-ever real Kaggle TPU run of the `liquid` arm (`model.py`'s
+`LiquidGate`, Liquid Time-Constant/CfC per-layer gate, commit
+`c3be90a`). Trained FROM SCRATCH (no `--init-from`: liquid's extra
+gate params are not present in any `ple`-arm checkpoint, so
+`load_state_dict(strict=True)` would hard-fail) at round 9's original
+from-scratch hyperparameters (adamw lr=1e-3, batch_size=4, 600 steps),
+then the same direction-drill fine-tune stage as every prior round
+(equal 3-way share). Both stages exited 0 with no errors; drill-stage
+val ppl (5.69) looked numerically reasonable in isolation.
+
+Real eval result (full 309-episode coverage, all 6 games):
+
+| game      | r38 (baseline) | r46 (75.99%, best) | r52 (liquid, this round) |
+|-----------|------------------|------------------------|--------------------------------|
+| babyai    | 5.48%            | 4.52%                   | **0.00%**                       |
+| babaisai  | 4.05%            | 1.46%                   | **0.00%**                       |
+| crafter   | 0.28%            | 0.15%                   | 0.75%                            |
+| textworld | 100.00%          | 100.00%                 | 100.00%                          |
+| minihack  | 92.58%           | 95.63%                  | **0.00%**                       |
+| nle       | 90.34%           | 95.30%                  | 0.49%                            |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | **7.19%** |
+
+**Real, honest root cause (verified by reading raw episode output, not
+assumed):** the model's real completions are degenerate repetition
+garbage, not valid-but-wrong actions -- e.g. `"DoPlayererererererercininietininin"`,
+`"I I I I you you you you you you you you you you me me"`,
+`"A APlayererererererererererererer"` (verbatim from a real
+`failed_candidates` entry, `goto_win_run_00.json`). This is
+undertraining, not an architecture defect: round 9's own from-scratch
+run (which every other round's `ple` checkpoint lineage warm-starts
+from) trained to a much lower loss before ANY of this campaign's real
+evals ran against it; 600 steps from scratch was calibrated as a
+*continued-training* budget (small delta on an already-converged
+checkpoint), not a from-scratch convergence budget, and `liquid` had no
+equivalent warm start available. Ended at main-pass val ppl=50.67 --
+nowhere near converged for coherent text generation.
+
+**This checkpoint is NOT usable and does not represent a real test of
+the liquid architecture's viability** -- the comparison is confounded
+by radically insufficient training, not by the LiquidGate mechanism
+itself. `liquid`'s local smoke-test result (beating `ple` at 40 steps,
+noted in `model.py`'s docstring) was also from-scratch-style, so this
+is consistent, not contradictory: the local test's smaller/toy-data
+scale converges fast; this campaign's real BALROG vocabulary and
+2048-token sequences need substantially more than 600 from-scratch
+steps to reach usable output, regardless of arm.
+
+**Next step for this lever, if pursued further:** either (a) train
+`liquid` from scratch for a real, much larger step budget (e.g.
+matching or exceeding round 9's own original from-scratch convergence,
+not round 9's continued-training delta) before any BALROG eval is
+attempted again, or (b) abandon the liquid arm as not worth the
+from-scratch cost given round 46's checkpoint already provides a strong,
+cheap-to-continue baseline. Given 14 rounds of share-tuning are now
+closed and this from-scratch architecture swap consumed real TPU/GPU
+budget for a genuinely inconclusive (confounded) result, the more
+promising near-term lever is (b) from round 51's list: a
+non-mixture-composition intervention on the confused decision itself
+(constrained decoding, contrastive/negative-example training signal),
+built as a fine-tune ON TOP of round 46's already-strong `ple`
+checkpoint rather than another from-scratch architecture experiment.
