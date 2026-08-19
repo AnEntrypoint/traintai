@@ -6037,3 +6037,89 @@ non-mixture-composition intervention on the confused decision itself
 (constrained decoding, contrastive/negative-example training signal),
 built as a fine-tune ON TOP of round 46's already-strong `ple`
 checkpoint rather than another from-scratch architecture experiment.
+
+## Round 53: unlikelihood-training fine-tune on round 46's checkpoint -- NEW REAL CAMPAIGN BEST (78.14%) (2026-08-19)
+
+Designed and locally verified (before any Kaggle spend, per explicit
+user instruction) a real unlikelihood-training term (Welleck et al.,
+"Neural Text Degeneration with Unlikelihood Training") targeting the
+exact confused decision directly, rather than another mixture-share or
+architecture experiment. Mechanism: at each direction-drill row's
+action-start position, penalize the model's probability mass on every
+OTHER game's first-token direction word (all first tokens verified to
+be single, distinct BPE tokens with no cross-game collisions), while
+leaving normal cross-entropy training everywhere else in the mixture
+completely unchanged (`--ul-weight`, 0 by default = exact no-op).
+Implementation: new `.ul.bin` sidecar built by `st_prepare.py` from
+`balrog_direction_drill.py`'s per-row `game` label, `unlikelihood_loss()`
+in `train.py` computed directly from returned logits (no `model.py`
+changes at all). Commit `24de46a`.
+
+**Local verification before launch** (per explicit user instruction --
+design+verify locally first, low risk, before any TPU spend):
+`.ul.bin` sidecar values confirmed bounded to `{0,1,2,3,4}`; 200/200
+sampled marked positions exactly boundary-aligned with the existing
+`.mask.bin` action-start position and token-identity-matched to their
+game's expected first-token set; `unlikelihood_loss()` verified on
+synthetic tensors (exactly zero when unmarked, correct-sign gradient
+pushing down a wrong-game token's logit, zero gradient leakage to
+unmarked positions, no penalty on the correct game's own token); a
+real 10-step `train.py` smoke test on actual drill data ran cleanly
+with no NaN (`--ul-weight 0` confirmed an exact no-op vs `--ul-weight
+0.1` at step 0).
+
+**Real Kaggle TPU test**: a short (100-step, lr=1.25e-5, `--ul-weight
+0.1`) fine-tune applied DIRECTLY on top of round 46's own
+already-drilled checkpoint (75.99%, the prior campaign best) -- same
+equal 3-way drill share round 46 itself used (babyai excluded, since
+round 46's own checkpoint never saw babyai in its drill), so the
+unlikelihood term is the ONLY new variable vs round 46, isolating its
+effect from any other confound. Both stages exited 0, drill build
+correctly marked all 19999/20000 rows.
+
+Real eval result (full 309-episode coverage, all 6 games):
+
+| game      | r38 (baseline) | r46 (75.99%, prior best) | r53 (unlikelihood, this round) |
+|-----------|------------------|------------------------------|--------------------------------------|
+| babyai    | 5.48%            | 4.52%                         | 3.28%                                 |
+| babaisai  | 4.05%            | 1.46%                         | 1.36%                                 |
+| crafter   | 0.28%            | 0.15%                         | 0.13%                                 |
+| textworld | 100.00%          | 100.00%                       | 100.00%                               |
+| minihack  | 92.58%           | 95.63%                        | **96.95%**                            |
+| nle       | 90.34%           | 95.30%                        | **96.80%**                            |
+| **aggregate (excl boxoban)** | 73.67% | 75.99% | **78.14%** |
+
+**Real, honest finding: this is a genuine new campaign best, and the
+unlikelihood mechanism IS a viable lever.** minihack and nle -- by far
+the two largest, highest-step-count games (11961 + 11985 of 32267
+total non-boxoban steps, ~74% of all evaluated steps) -- both improved
+measurably over round 46 (95.63%->96.95%, 95.30%->96.80%), which is
+what drives the aggregate past round 46 despite babyai/babaisai/crafter
+staying roughly flat or very slightly down. This is a DIFFERENT
+mechanism from every prior share-tuning round: rather than
+redistributing which game gets more drill rows (a zero-sum game
+confirmed exhausted across 14 rounds), this pushes down cross-game
+confusion directly at the token-probability level, which apparently
+helps minihack/nle's OWN correct-direction-word confidence (less
+probability mass "leaking" to babaisai's/crafter's/babyai's
+competing conventions) without costing them the share they'd lose in a
+mixture-share reallocation.
+
+**Practical conclusion**: round 53's checkpoint (78.14%) is the new
+real campaign best across 15 real rounds (38-53), the first result to
+beat round 46 since it was set. The unlikelihood-training axis is
+confirmed viable and NOT yet exhausted -- unlike the share-tuning axis,
+this is the FIRST test of this mechanism, with real headroom to
+explore: `--ul-weight` was only tested at one value (0.1); babyai's
+own drop (4.52%->3.28%) suggests the penalty may currently be too
+diffuse/strong for the smaller games relative to their contribution,
+worth testing including babyai in the drill (as round 50 did) combined
+with unlikelihood, or a per-game-weighted penalty. Next real lever
+candidates, in priority order: (1) sweep `--ul-weight` (e.g. 0.05, 0.2)
+to find whether the effect size grows/shrinks predictably; (2) combine
+unlikelihood with babyai's real drill target (round 50's fix) now that
+both mechanisms are separately confirmed to help; (3) the liquid arm
+retry with the newly-added convergence-based early stopping
+(`--patience`/`--min-delta`, commit `086454a`) remains a separate,
+still-untested architectural question, independent of this mixture/
+training-signal axis.
