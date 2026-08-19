@@ -161,6 +161,14 @@ def main():
     games = list(by_game.keys())
     if args.game_share:
         override = json.loads(args.game_share)
+        unknown = set(override) - set(games)
+        if unknown:
+            raise SystemExit(
+                f"--game-share names unknown game(s) {sorted(unknown)} -- "
+                f"real keys are {sorted(games)} (babyai is intentionally "
+                f"absent: its own direction confusion is 'go X' phrases, "
+                f"not bare direction words, a different drill target)."
+            )
         remaining_games = [g for g in games if g not in override]
         remaining_share = max(0.0, 1.0 - sum(override.values()))
         equal_remainder = remaining_share / len(remaining_games) if remaining_games else 0.0
