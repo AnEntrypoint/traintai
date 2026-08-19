@@ -5848,3 +5848,71 @@ drill share axis is likely approaching its own real ceiling for further
 uniform-style search; a genuinely new lever (e.g. babyai's own isolated
 share sweep, or moving beyond the drill-share axis entirely) is the
 next real decision point.
+
+## Round 50: babyai's first-ever real drill signal -- genuine improvement over round 38, but still below round 46's campaign best; investigation arc closed here (2026-08-19)
+
+Real root-cause finding before this round: babyai was NEVER actually a
+`DIRECTION_ACTIONS` key in `balrog_direction_drill.py` -- it only
+appeared in `GAME_MARKERS` (row classification for the main mixture),
+never as a real drill target. Every round's babyai accuracy swing
+(rounds 46-49) was a pure side effect of the OTHER three games' share
+changes, not a direct lever -- there was nothing to tune. Added babyai
+with its own real targets (`"go forward"`, `"turn left"`, `"turn
+right"`, 2864 real unique rows), fixing this genuine capability gap
+(commit `8c7f959`). This round tests the first GENUINE 4-way
+equal-share drill (babyai/babaisai/crafter/minihack_nle_textworld each
+25%, verified via log: `equal share`, babyai correctly getting
+5000/20000 rows).
+
+Real eval result (full 309-episode coverage):
+
+| game      | r38 (baseline) | r46 (75.99%, best) | r50 (babyai added) |
+|-----------|------------------|------------------------|--------------------------|
+| babyai    | 5.48%            | 4.52%                   | **12.61%**                |
+| babaisai  | 4.05%            | 1.46%                   | **5.03%**                 |
+| crafter   | 0.28%            | 0.15%                   | 0.32%                      |
+| textworld | 100.00%          | 100.00%                 | 100.00%                    |
+| minihack  | 92.58%           | 95.63%                  | 90.04%                     |
+| nle       | 90.34%           | 95.30%                  | 89.85%                     |
+| **aggregate (excl boxoban)** | 73.67% | **75.99%** | 74.25% |
+
+**Real confirmation that babyai's own drill signal genuinely helps**:
+12.61%, its best result at an EQUAL (not weighted) share across the
+entire campaign -- a real, direct improvement attributable to giving
+it a real target for the first time, not a side effect of another
+game's share change. babaisai also improved over round 46's equal
+share (1.46%->5.03%), consistent with all four games now genuinely
+sharing the drill mechanism instead of three.
+
+**But the aggregate (74.25%) still falls short of round 46's real
+campaign best (75.99%)** -- minihack (95.63%->90.04%) and nle
+(95.30%->89.85%) both paid a real cost from the drill's now-4-way
+split (each game's share genuinely dropped from 33% to 25% to
+accommodate babyai), the same zero-sum tradeoff pattern established
+throughout this investigation. Aggregate IS a real improvement over
+round 38's original baseline (73.67%->74.25%), but not over round 46.
+
+**Practical, final conclusion for this investigation arc**: round 46's
+checkpoint (75.99%) remains the unambiguous real campaign best across
+all 13 real rounds tested (38-50). The direction-drill lever family,
+now including babyai as a genuine fourth target, has a clear, fully
+characterized zero-sum structure: every game's real gain from a larger
+share costs the others measurably, and minihack/nle -- the two
+strongest, highest-volume games -- are the most sensitive to losing
+share. No single share configuration has beaten round 46's plain
+equal-3-way (pre-babyai) split on aggregate. The real, evidence-backed
+options for a genuinely NEW lever, none yet tested:
+  1. A moderate babaisai/babyai boost that keeps minihack/nle CLOSER to
+     their natural ~30%+ share than the now-4-way-equal 25% split
+     (e.g. minihack_nle_textworld=0.35, remaining 0.65 split across
+     babyai/babaisai/crafter) -- untested combination given babyai is
+     now real.
+  2. Moving beyond the drill-share axis entirely: a genuine
+     architectural or inference-time lever (e.g. the earlier-considered
+     constrained decoding, or a contrastive/negative-example training
+     signal) rather than further mixture-composition search, since 13
+     rounds of real share tuning have now mapped this axis thoroughly
+     without displacing round 46.
+This investigation arc (rounds 38-50) is closed pending a genuinely
+new hypothesis; round 46's checkpoint is the correct base for all
+future work.
