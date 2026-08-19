@@ -180,6 +180,25 @@ def main():
                           "identical behavior to before this existed); only active when "
                           "a matching .ul.bin sidecar is present (built by st_prepare.py "
                           "from balrog_direction_drill.py's per-row game labels)")
+    ap.add_argument("--patience", type=int, default=0,
+                     help="convergence-based early stop: exit once val loss has not "
+                          "improved by at least --min-delta for this many consecutive "
+                          "eval checkpoints (each checkpoint is --eval-every steps apart). "
+                          "0 (default) disables early stopping -- identical behavior to "
+                          "before this existed, always running the full --steps. --steps "
+                          "still sets the LR warmup/decay schedule's shape and acts as a "
+                          "hard upper bound, so pass a generous --steps alongside "
+                          "--patience (the run will exit early on plateau, not run the "
+                          "full budget) rather than removing --steps entirely -- the WSD "
+                          "schedule needs a known total length to shape its warmup/decay "
+                          "curve.")
+    ap.add_argument("--min-delta", type=float, default=1e-3,
+                     help="minimum real val-loss improvement to reset the --patience "
+                          "counter; without this a strict < comparison never plateaus "
+                          "even at near-zero LR, since float noise still ticks the loss "
+                          "down by <1e-4 every checkpoint (confirmed locally: at lr=1e-8, "
+                          "val loss crept 10.3527->10.3523 over 100 steps, never "
+                          "triggering a naive exact-improvement check).")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -250,6 +269,7 @@ def main():
 
     name = f"{args.arm}{'-' + args.tag if args.tag else ''}-s{args.seed}"
     history, best = [], float("inf")
+    plateau_checks = 0  # consecutive eval checkpoints with no new best val loss; --patience>0 stops the run once this reaches it
     t0 = time.time()
 
     for step in range(args.steps):
@@ -308,13 +328,15 @@ def main():
 
         if step % args.eval_every == 0 or step == args.steps - 1:
             vl = evaluate(model, val_b, args.eval_iters)
-            improved = vl < best
+            improved = vl < best - args.min_delta
             best = min(best, vl)
+            plateau_checks = 0 if improved else plateau_checks + 1
             tok = (step + 1) * args.batch_size * args.seq_len
             history.append({"step": step, "tokens": tok, "train": loss.item(), "val": vl})
             print(
                 f"{name} step {step:5d} | tok {tok / 1e6:6.1f}M | train {loss.item():.4f} "
-                f"| val {vl:.4f} | ppl {math.exp(vl):7.2f} | {time.time() - t0:5.0f}s",
+                f"| val {vl:.4f} | ppl {math.exp(vl):7.2f} | {time.time() - t0:5.0f}s"
+                + (f" | plateau {plateau_checks}/{args.patience}" if args.patience else ""),
                 flush=True,
             )
             if improved:
@@ -322,6 +344,10 @@ def main():
                            os.path.join(RUNS, f"{name}-best.pt"))
             torch.save({"cfg": cfg.__dict__, "state": model.state_dict()},
                        os.path.join(RUNS, f"{name}-latest.pt"))
+            if args.patience and plateau_checks >= args.patience:
+                print(f"{name} early stop: val loss plateaued for {plateau_checks} consecutive "
+                      f"checkpoints (--patience {args.patience}) at step {step}", flush=True)
+                break
 
     result = {
         "arm": args.arm,
