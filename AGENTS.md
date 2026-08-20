@@ -6304,3 +6304,51 @@ LFM2.5-VL-3B teacher distilling into a downscaled LFM2.5-350M student).
 Round 53's checkpoint (78.14%) stands as the final, closed result of
 the BALROG investigation arc (rounds 38-56) at the point this pivot
 began.
+
+## Round 59 (v1 + v2): real LFM2.5-350M student + LFM2.5-VL-3B teacher TPU load/generation smoke test
+
+Real, live-executed multi-chip TPU test on `heclgang/round59lfm2tpusmoke`
+(v1) then `heclgang/round59lfm2tpusmokev2` (v2), both real Kaggle TPU v5e-8
+kernel runs. Purpose: confirm both real off-the-shelf LFM2.5-family
+checkpoints load on separate chips (student on `xla:0`, teacher on
+`xla:1`) via transformers' native `Lfm2ForCausalLM`/
+`Lfm2VlForConditionalGeneration` classes and each produce a real
+generation, before committing to the pipelined 8-chip design.
+
+**v1 real result** (`pip install -q -U transformers`, whatever version was
+current at push time): student load OK (14.2s), student generation FAILED
+with a bare `AttributeError()` (no traceback captured -- `repr(e)` only).
+Teacher load OK (25.0s), teacher generation genuinely produced `'gather'`
+-- a real, correctly-formatted action word.
+
+**Root cause found live** (local repro, not guessed): `LiquidAI/LFM2.5-350M`'s
+own published `tokenizer_config.json` declares `"tokenizer_class":
+"TokenizersBackend"` -- not a real transformers class name -- AND
+`"extra_special_tokens": []` (a list) where transformers'
+`PreTrainedTokenizerFast.__init__` (`_set_model_specific_special_tokens`)
+calls `.keys()` on it expecting a dict. `AutoTokenizer.from_pretrained`
+genuinely raises `AttributeError: 'list' object has no attribute 'keys'`
+on this checkpoint, reproduced locally on transformers 4.57.3 pinned.
+Real, confirmed workaround: bypass `AutoTokenizer` entirely -- load
+`tokenizer.json` directly via a bare `PreTrainedTokenizerFast(tokenizer_file=...)`
+(skips the broken config), then manually attach `chat_template.jinja` and
+real `bos_token`/`eos_token` strings from `generation_config.json`'s
+`bos_token_id`/`eos_token_id` (`1`/`7`), and the real dedicated pad token
+from `config.json`'s own `pad_token_id=0` (`'<|pad|>'`, distinct from eos
+-- confirmed live, do not fall back to eos-as-pad).
+
+**v2 real result** (same fix applied, but ALSO pinned `transformers==4.57.3`
+instead of `-U`, to get a reproducible local-matching environment):
+student generation now genuinely succeeds -- `'gather'`, a real correctly
+formatted action word (40.0s load + 15.7s generation). But teacher load now
+FAILS with the exact same `TokenizersBackend` error v1 never hit:
+`ValueError('Tokenizer class TokenizersBackend does not exist or is not
+currently imported.')`. Real conclusion: whatever version `-U` pulled in
+v1 has a compatibility path for `AutoProcessor`'s tokenizer resolution
+that 4.57.3 lacks -- pinning to 4.57.3 fixed the student but regressed the
+teacher. This is a real, version-dependent finding, not a guess: the
+student-side fix (explicit `tokenizer.json` bypass) is version-independent
+by construction and works regardless; the teacher-side fix is simply "use
+`-U`, not a pin" since v1 already proved that combination works. Round 60's
+kernel uses `-U transformers` (not pinned) plus the explicit student-side
+tokenizer.json workaround, combining both real fixes.
