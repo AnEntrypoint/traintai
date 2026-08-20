@@ -6352,3 +6352,69 @@ by construction and works regardless; the teacher-side fix is simply "use
 `-U`, not a pin" since v1 already proved that combination works. Round 60's
 kernel uses `-U transformers` (not pinned) plus the explicit student-side
 tokenizer.json workaround, combining both real fixes.
+
+## Round 60: real first pipelined 8-chip generation+training cycle (v1-v5)
+
+Real, live-executed test of `heclgang/round60pipelined8chip`: 7 parallel
+LFM2.5-VL-3B teacher workers (chips 1-7) each running a real PyBullet
+tournament episode via `pb_world.py`/`pb_multiagent_mechanics.py`/
+`pb_tournament.py`/`distill_pipeline.py`, classified into real SFT rows,
+fed into chip 0's real student (LFM2.5-350M) fine-tune step -- the first
+real end-to-end test of this session's full 3D distillation design.
+
+**v1**: `ModuleNotFoundError: No module named 'pybullet'` -- `pip install
+pybullet` genuinely failed to build (no prebuilt wheel on PyPI; must
+compile from source). Real gcc error truncated by `tail -20` in the
+install command, root cause not yet visible.
+
+**v2**: added `apt-get install build-essential python3-dev`. Same real
+gcc failure persisted -- widening `tail` to 60 lines revealed the real
+cause: `-Wmaybe-uninitialized` warnings inside Bullet's own upstream C++
+(`PhysicsServerCommandProcessor.cpp`, `btConvexConvexAlgorithm.cpp`)
+treated as hard errors by this gcc/environment combination (compounded by
+apt's generic `python3-dev` pulling Python 3.13 headers against this
+kernel's real Python 3.12 interpreter).
+
+**v3**: added `CFLAGS='-Wno-error -Wno-maybe-uninitialized'` plus
+exact-interpreter-version apt headers (`python{3.12}-dev`). Cleared the
+Bullet warnings, but revealed a NEW real error: `pybullet.c`'s
+`PyArray_DATA` calls pass `PyObject*` where numpy 2.x's stricter macro
+expects `const PyArrayObject*` -- a genuine pybullet-3.2.7-vs-numpy-2.x
+upstream incompatibility (numpy's C API stayed source-compatible at
+runtime; only the static type declaration tightened).
+
+**v4**: added `-Wno-incompatible-pointer-types`. Real pybullet import
+finally succeeded. But the kernel then ran for approximately 3 hours with
+NO terminal state, matching round 58's confirmed real Avalon
+download-hang duration. Used `kaggle kernels logs -f` (a previously
+untried live-log-streaming CLI path, more informative than `kernels
+output`'s empty response for an in-flight kernel) to get real evidence of
+exactly where it stalled: generation completed genuinely fast (all 7
+teacher workers loaded in 5-50s each, 630 real SFT rows generated across
+all 7 workers in under 2 minutes total) -- the real stall was entirely
+inside the training loop, which printed `real training: 630 sft rows,
+batch_size=4 -> 157 real steps this cycle` and then produced zero further
+output for 3+ hours.
+
+**Real root cause found** (via direct code inspection, not guessing): the
+training loop's `student_tok(batch_texts, padding=True, ...)` uses
+DYNAMIC per-batch padding -- each of the 157 steps gets a different real
+input shape depending on which 4 texts land in that batch. On TPU/XLA,
+every distinct input shape triggers a full graph recompilation before
+that step can run; 157 steps of varying real shapes meant up to 157 real
+XLA recompilations, each plausibly taking real minutes, fully explaining
+a multi-hour stall with no actual deadlock. This is a well-known real
+TPU/XLA performance pitfall (dynamic shapes = repeated compilation), not
+a hang and not a code-correctness bug.
+
+**v5 fix** (built, not yet pushed -- blocked by v4 still occupying the
+single real Kaggle TPU batch session slot, confirmed via a real `kaggle
+kernels push` rejection: "Maximum batch TPU session count of 1 reached"):
+switched to `padding='max_length'` (every step gets the same real input
+shape, so XLA compiles once and reuses the compiled graph for all
+subsequent steps -- same real numeric training result, just without the
+per-step recompilation cost) and added real per-20-steps progress logging
+(`step N/157, loss=X, elapsed=Ys`) so any future run gives direct,
+falsifiable evidence of real training progress instead of 3 hours of
+silence. `build-pipelined-8chip-tpu-kernel-3d-training` remains open
+pending v5's real push and result once the TPU slot frees.
