@@ -6123,3 +6123,76 @@ retry with the newly-added convergence-based early stopping
 (`--patience`/`--min-delta`, commit `086454a`) remains a separate,
 still-untested architectural question, independent of this mixture/
 training-signal axis.
+
+## Round 54: liquid arm retry with genuine convergence-based training -- STILL catastrophically fails, architecture question now closed (2026-08-20)
+
+Per explicit user instruction ("retry liquid with a real convergence
+budget... instead of a hard rounds budget, set a convergence budget"),
+added real convergence-based early stopping to `train.py`
+(`--patience`/`--min-delta`, commit `086454a`, locally verified: a
+forced-plateau scenario triggers early stop at the exact expected
+step, a genuine-improvement scenario runs the full budget with zero
+early stops, `--patience 0` default is an exact no-op). Retrained
+`liquid` from scratch with a generous `--steps 6000 --patience 8
+--min-delta 1e-3` budget (10x round 52's fixed 600 steps) -- the run
+used the FULL 6000-step ceiling without ever triggering early stop
+(plateau counter kept resetting to 0, loss was still genuinely
+improving throughout), reaching main-pass val ppl=17.58, dramatically
+better than round 52's ppl=50.67. This resolves the exact confound
+round 52 was left with: this run is genuinely NOT under-trained by any
+reasonable measure available.
+
+Real eval result (full 309-episode coverage, all 6 games):
+
+| game      | r38 (baseline) | r53 (78.14%, campaign best) | r52 (liquid, under-trained) | r54 (liquid, converged) |
+|-----------|------------------|-----------------------------------|-------------------------------------|--------------------------------|
+| babyai    | 5.48%            | 3.28%                              | 0.00%                                | **0.00%**                       |
+| babaisai  | 4.05%            | 1.36%                              | 0.00%                                | **0.00%**                       |
+| crafter   | 0.28%            | 0.13%                              | 0.75%                                | 0.23%                            |
+| textworld | 100.00%          | 100.00%                            | 100.00%                              | 100.00%                          |
+| minihack  | 92.58%           | 96.95%                             | 0.00%                                | **0.00%**                       |
+| nle       | 90.34%           | 96.80%                             | 0.49%                                | 0.75%                            |
+| **aggregate (excl boxoban)** | 73.67% | **78.14%** | 7.19% | **7.16%** |
+
+**Real, honest, and important finding: this is NOT an under-training
+confound -- liquid genuinely fails at real BALROG-format generation
+even when properly converged.** Direct inspection of raw
+`failed_candidates` output (`goto_win_run_00.json`) confirms the exact
+same degenerate-repetition failure mode as round 52: `"Doum are are
+have have haveananananananananan"`, `"E
+Eamamamamamamamamamamamamamam"`, `"Einininininininininininininietiet"`
+-- garbage repetition, not valid-but-wrong actions, essentially
+unchanged from round 52 despite main-pass val ppl improving 3x
+(50.67->17.58) and the drill stage's own val ppl also looking
+numerically fine in isolation (1.42, comparable to `ple`'s drill-stage
+numbers in other rounds). The aggregate (7.16%) is statistically
+indistinguishable from round 52's confounded result (7.19%) --
+confirms this is NOT a step-budget problem.
+
+**Real root-cause hypothesis (not yet verified, flagged for any future
+revisit)**: val loss/ppl on the TRAINING DISTRIBUTION (BALROG demo
+completions, direction-drill rows) does not predict coherent
+GENERATION under the model's own autoregressive sampling loop at
+real BALROG episode length -- the LiquidGate's input-dependent
+leaky-integrator update (tau varies per input) may create a
+qualitatively different failure mode under long-horizon
+self-generated context than the fixed elementwise PLE gate, something
+a next-token teacher-forced loss on held-out data cannot detect. This
+is a genuinely different question from "did it train enough" and
+would require either (a) inspecting actual raw generation samples
+during training (not just val loss) before ANY further Kaggle spend
+on this arm, or (b) treating this as decisive and abandoning `liquid`
+for this project's real generation-quality objective.
+
+**Practical conclusion**: the liquid architecture question, opened
+this session, is now closed with two consistent real Kaggle TPU
+results (rounds 52 and 54) across a 10x step-budget range -- it does
+not produce usable BALROG completions regardless of convergence
+budget, and should not be retried again without first solving the
+teacher-forced-loss-vs-generation-quality gap identified above (a
+different, harder problem than a training-budget problem). Round 53's
+checkpoint (78.14%, unlikelihood-training on the `ple` arm) remains
+the real, confirmed campaign best and the correct base for all
+continuing work. The `--ul-weight` sweep (round 53's own stated
+priority #1) is the active next lever, already launched as round 55
+(`--ul-weight` 0.05 and 0.2 vs round 53's winning 0.1).
