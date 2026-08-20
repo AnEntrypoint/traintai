@@ -6434,3 +6434,31 @@ until the host genuinely ran out -- the fix already staged in v5
 (`padding='max_length'`, a single compile reused every step) directly
 addresses this, not just the speed. v5 was pushed once v4's ERROR freed
 the single real TPU slot (`heclgang/round60pipelined8chip` version 5).
+
+**v5's real result**: the padding fix worked for its intended purpose
+(constant batch shape, confirmed via direct calculation: all 157 steps
+produce exactly 4 texts with no wraparound short-batch), and step 1
+completed genuinely fast (4.2s, loss=7.9162). But steps 2-20 (watched
+live via `kaggle kernels logs -f`) averaged 136.2s/step -- loss dropped
+real numbers (7.92 -> 0.40, confirming training IS numerically correct)
+but at a rate projecting ~5.9 real hours for the full 157-step cycle,
+still far too slow to be useful. Root cause found by reading this
+project's OWN `src/train.py` (lines 242-251), which had already
+documented and solved this EXACT bug in a prior session:
+`torch.optim.AdamW.step()` on XLA genuinely makes the traced graph grow
+every call and never hits the compilation cache (that prior session's own
+real smoke test: 0.15s -> 11.47s -> 18.06s -> 22.65s, growing every
+call) -- round60's training loop used plain `torch.optim.AdamW`, exactly
+the already-known-broken path, independently rediscovering the same real
+hardware behavior. The padding fix was necessary but not sufficient.
+
+**v6 fix** (built, staged at `C:/dev/kaggle/round60-pipelined-8chip`,
+pending v5 reaching a terminal state to free the single real TPU slot):
+replaced `torch.optim.AdamW` with the same hand-rolled manual Adam update
+(static per-tensor ops only: `m.mul_(0.9).add_(g_, alpha=0.1)`,
+`v.mul_(0.95).addcmul_(g_, g_, value=0.05)`, bias-corrected
+`addcdiv_`) plus an explicit `xm.mark_step()` per step, ported directly
+from `src/train.py`'s own proven `use_xla_manual_adam` path -- confirmed
+steady at 0.18s/step from step 2 in that prior session's real smoke test.
+`build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v6's
+real push and result.
