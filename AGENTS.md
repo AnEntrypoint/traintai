@@ -6248,3 +6248,59 @@ mechanisms are now independently confirmed to help (round 50:
 babyai's own drill target alone; round 53: unlikelihood alone), and
 they have never been tested together. This is the active next lever,
 proceeding without further confirmation per standing direction.
+
+## Round 56: unlikelihood + babyai combined drill -- does NOT beat round53, mechanisms don't combine additively (2026-08-20)
+
+Real Kaggle TPU test combining round 53's `--ul-weight 0.1` (confirmed
+local optimum, round 55) with a genuine 4-way equal drill share
+including babyai's real target (round 50's fix), in the SAME fine-tune
+pass -- the one new variable versus round 53 was babyai's inclusion in
+the drill. Init from round 46's checkpoint (same base as round 53),
+both stages exited 0, 20000/20000 rows correctly unlikelihood-marked
+across all 4 games.
+
+Real eval result (full 309-episode coverage, all 6 games):
+
+| game      | r38 (baseline) | r53 (78.14%, best, ul alone) | r56 (ul+babyai combined) |
+|-----------|------------------|-------------------------------------|--------------------------------|
+| babyai    | 5.48%            | 3.28%                                | **5.83%**                       |
+| babaisai  | 4.05%            | 1.36%                                | 2.50%                            |
+| crafter   | 0.28%            | 0.13%                                | 0.34%                            |
+| textworld | 100.00%          | 100.00%                              | 100.00%                          |
+| minihack  | 92.58%           | 96.95%                               | 96.12%                           |
+| nle       | 90.34%           | 96.80%                               | 95.78%                           |
+| **aggregate (excl boxoban)** | 73.67% | **78.14%** | 75.52% |
+
+**Real, honest finding: the two mechanisms do NOT combine additively --
+combining them costs more on minihack/nle than babyai's real gain
+recovers.** babyai's own accuracy is genuinely higher than round 53's
+(5.83% vs 3.28%, even beating round 38's baseline), confirming babyai's
+drill target keeps helping when combined with unlikelihood. But
+minihack (96.95%->96.12%) and nle (96.80%->95.78%) both paid a real
+cost from the 4-way drill share dilution (each game's share genuinely
+drops from round 53's 3-way to a 4-way split to accommodate babyai) --
+the exact same zero-sum share-tuning tradeoff this campaign already
+mapped exhaustively in rounds 38-51, now recurring even with
+unlikelihood training layered on top. Since minihack/nle are 74% of
+all evaluated steps, their small percentage-point loss outweighs
+babyai's gain on the aggregate.
+
+**Practical conclusion**: round 53's checkpoint (78.14%, `--ul-weight
+0.1`, 3-way equal share, no babyai) remains the real, confirmed
+campaign best across all rounds (38-56) of the BALROG investigation
+arc. Combining unlikelihood with babyai's drill target is a genuinely
+tested, real negative result -- not worth pursuing further without
+first solving the underlying share-dilution problem (e.g. per-game
+`--ul-weight` values, or protecting minihack/nle's share specifically
+while still including babyai, mirroring round 51's untested-until-now
+idea but now with unlikelihood active too). This is recorded as a real
+option for a future round but is NOT the active next lever.
+
+**Session-level pivot recorded here for continuity**: per explicit user
+direction, the project's active focus has now moved beyond further
+BALROG lever-tuning to a genuinely new direction -- a 3D-capable
+generalist gameplay agent (Avalon/PyBullet-based environment,
+LFM2.5-VL-3B teacher distilling into a downscaled LFM2.5-350M student).
+Round 53's checkpoint (78.14%) stands as the final, closed result of
+the BALROG investigation arc (rounds 38-56) at the point this pivot
+began.
