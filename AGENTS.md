@@ -6418,3 +6418,19 @@ per-step recompilation cost) and added real per-20-steps progress logging
 falsifiable evidence of real training progress instead of 3 hours of
 silence. `build-pipelined-8chip-tpu-kernel-3d-training` remains open
 pending v5's real push and result once the TPU slot frees.
+
+**v4's real final outcome** (confirmed after it reached a terminal state):
+`KernelWorkerStatus.ERROR` after running 11494.8s (~3.2 real hours). The
+real Kaggle UI surfaced "our notebook tried to allocate more memory than
+is available"; the raw log itself shows complete silence from 317.6s
+(training start) to 11494.8s (`Kernel died while waiting for execute
+reply`, then a real `nbclient.exceptions.DeadKernelError`) -- no OOM
+message reached the log stream itself, only the UI-level summary. This is
+consistent with (not a new, separate bug from) the already-diagnosed
+recompilation root cause: XLA's compilation cache grows with every
+distinctly-shaped graph, and 157 steps of real dynamically-padded batches
+means up to 157 real cached graphs accumulating in memory over 3+ hours
+until the host genuinely ran out -- the fix already staged in v5
+(`padding='max_length'`, a single compile reused every step) directly
+addresses this, not just the speed. v5 was pushed once v4's ERROR freed
+the single real TPU slot (`heclgang/round60pipelined8chip` version 5).
