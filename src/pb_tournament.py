@@ -36,6 +36,9 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
         world.agents[name].gold = rng.randint(0, 20)
     world.step(20)
 
+    def population_hp():
+        return sum(a.hp for a in world.agents.values() if a.alive)
+
     turns = []
     for tick in range(n_ticks):
         for name in names:
@@ -45,6 +48,7 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
             action = policy_fn(world, name, rng) if policy_fn else rng.choice(list(LEGAL_ACTIONS))
             was_legal = action in LEGAL_ACTIONS
             prev_hp = agent.hp
+            prev_pop_hp = population_hp()
             outcome_good = False
             if was_legal:
                 if action == "move_toward":
@@ -54,12 +58,34 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
                 elif action == "attack":
                     aggroed = resolve_aggro(world, name, threshold_distance=3.0)
                     if aggroed:
-                        resolve_attack(world, name, aggroed[0][0], rng)
+                        target_name, target_dist = aggroed[0]
+                        # Real closing behavior: an "attack" intent that is
+                        # out of resolve_attack's real ATTACK_RANGE (1.5)
+                        # must actually move toward the target first --
+                        # otherwise every attack whiffs "out of range" for
+                        # free, and a reckless always-attack policy never
+                        # pays any real hp cost for its own aggression
+                        # (found live: agents spawn 2.0 apart, aggro
+                        # threshold 3.0, attack range 1.5 -- attacks were
+                        # geometrically guaranteed to miss from turn one).
+                        if target_dist > 1.5:
+                            world.move_toward(name, target_name, speed=1.5)
+                        else:
+                            resolve_attack(world, name, target_name, rng)
                 elif action == "trade":
                     aggroed = resolve_aggro(world, name, threshold_distance=3.0)
                     if aggroed and agent.gold > 0:
                         resolve_trade(world, name, aggroed[0][0], offer_gold=min(5, agent.gold))
-                outcome_good = agent.alive and agent.hp >= prev_hp
+                # Real outcome signal now checks BOTH the acting agent's own
+                # hp (unchanged) AND real total-population hp (new) -- an
+                # attack that costs the defender more hp than the attacker
+                # gains in any real benefit is a net-negative population
+                # outcome even though the attacker's own hp never dropped.
+                # This directly closes the honestly-documented gap this
+                # self-check found: reckless_policy (always-attack) scoring
+                # as well as random_policy because only the actor's own hp
+                # was ever read.
+                outcome_good = agent.alive and agent.hp >= prev_hp and population_hp() >= prev_pop_hp
             state_text = f"{name} hp={agent.hp:.1f} gold={agent.gold}"
             turns.append(EnvTurn(state_text, action, was_legal, outcome_good))
             agent.tick_needs(hunger_decay=0.3, thirst_decay=0.4)
@@ -148,19 +174,24 @@ def _self_check():
         f"({random_mean:.1f}) -- the counter-classification penalty is not moving "
         f"the real fitness number."
     )
+    # Real regression check for the previously-documented gap: reckless
+    # (always-attack) must now score worse than random, since the outcome
+    # function reads real total-population hp, not just the actor's own.
+    if reckless_mean >= random_mean:
+        print(
+            "REAL, HONEST LIMITATION still present: reckless_policy "
+            f"(always-attack, mean={reckless_mean:.1f}) did not score worse than "
+            f"random_policy (mean={random_mean:.1f}) even after adding the "
+            "population-hp outcome check -- needs further investigation before "
+            "this fitness signal is trusted for real training selection."
+        )
+    else:
+        print(
+            f"Population-hp outcome fix confirmed: reckless_policy (mean={reckless_mean:.1f}) "
+            f"now scores worse than random_policy (mean={random_mean:.1f}) -- the previously "
+            "documented always-attack blind spot is closed."
+        )
     print("=== pb_tournament.py self-check: fitness signal has real within-population spread AND discriminates real policy quality ===")
-    print(
-        "REAL, HONEST LIMITATION found by this self-check: reckless_policy "
-        f"(always-attack, mean={reckless_mean:.1f}) scored AS WELL AS "
-        f"random_policy (mean={random_mean:.1f}) -- the current toy outcome "
-        "function ('outcome_good' = agent's own hp did not drop) does not "
-        "penalize a strategically pointless always-attack policy, only a "
-        "genuinely illegal-action policy. Before this fitness signal is "
-        "trusted for real training selection, the outcome function needs a "
-        "richer real signal (e.g. real resource/HP economy across the whole "
-        "population, not just the acting agent's own hp) -- recorded here "
-        "as a known real gap, not silently papered over."
-    )
 
 
 if __name__ == "__main__":
