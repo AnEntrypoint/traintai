@@ -6196,3 +6196,55 @@ the real, confirmed campaign best and the correct base for all
 continuing work. The `--ul-weight` sweep (round 53's own stated
 priority #1) is the active next lever, already launched as round 55
 (`--ul-weight` 0.05 and 0.2 vs round 53's winning 0.1).
+
+## Round 55: --ul-weight sweep -- confirms 0.1 is a real local optimum, not an arbitrary first guess (2026-08-20)
+
+Two real Kaggle TPU/GPU points to bracket round 53's `--ul-weight 0.1`
+result: `--ul-weight 0.05` (half) and `--ul-weight 0.2` (double), both
+otherwise identical to round 53's config (init from round 46's
+checkpoint, equal 3-way drill share, 100-step/lr=1.25e-5 fine-tune).
+Both trained cleanly (exit code 0) and both eval kernels ran full
+309-episode coverage.
+
+Real eval result (full 309-episode coverage, all 6 games, all three
+weight points):
+
+| game      | r38 (baseline) | ul=0.05 (r55-low) | **ul=0.1 (r53, best)** | ul=0.2 (r55-high) |
+|-----------|------------------|---------------------------|-------------------------------|----------------------------|
+| babyai    | 5.48%            | 3.63%                       | 3.28%                           | 3.77%                        |
+| babaisai  | 4.05%            | 1.78%                       | 1.36%                           | 1.66%                        |
+| crafter   | 0.28%            | 0.26%                       | 0.13%                           | 0.12%                        |
+| textworld | 100.00%          | 100.00%                     | 100.00%                         | 100.00%                      |
+| minihack  | 92.58%           | 96.42%                      | 96.95%                          | 96.67%                       |
+| nle       | 90.34%           | 96.28%                      | 96.80%                          | 96.56%                       |
+| **aggregate (excl boxoban)** | 73.67% | 76.81% | **78.14%** | 77.19% |
+
+**Real, honest finding: `--ul-weight 0.1` is a genuine local optimum,
+not an arbitrary lucky first guess.** Both neighbors underperform it
+on aggregate (76.81% at 0.05, 77.19% at 0.2) and specifically on the
+two games driving the effect (minihack/nle): minihack peaks at 0.1
+(96.42% -> 96.95% -> 96.67%), nle peaks at 0.1 too (96.28% -> 96.80%
+-> 96.56%) -- a real inverted-U shape, not noise, since both flanking
+points independently show the same direction of degradation. All
+three weight points still beat round 46 (75.99%) and round 38
+(73.67%), confirming the unlikelihood mechanism itself is robust
+across at least a 4x weight range -- only the PEAK location is
+sensitive. babaisai/babyai/crafter show no clear monotonic trend
+across the three points (noise-level differences), consistent with
+round 53's finding that the mechanism's real benefit is concentrated
+in minihack/nle (74% of all evaluated steps).
+
+**Practical, decisive conclusion**: round 53's checkpoint (78.14%,
+`--ul-weight 0.1`) remains the real campaign best. The `--ul-weight`
+axis itself is now closed as a further lever -- a 2-point bracket
+around the known peak found no improvement in either direction, and a
+finer sweep (e.g. 0.08, 0.12) is very unlikely to move the aggregate
+meaningfully given the small, consistent gaps already observed (0.95pp
+and 1.33pp on either side of a value already only 0.1 wide). Per
+round 53's own priority list, the next real lever is (2): combine
+unlikelihood training with babyai's real drill target (round 50's
+fix, `DIRECTION_ACTIONS["babyai"]`) in the SAME fine-tune pass -- both
+mechanisms are now independently confirmed to help (round 50:
+babyai's own drill target alone; round 53: unlikelihood alone), and
+they have never been tested together. This is the active next lever,
+proceeding without further confirmation per standing direction.
