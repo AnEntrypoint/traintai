@@ -6485,5 +6485,48 @@ ONCE before the loop, and both the zero-grad and the manual-Adam update
 loop iterate that same cached list -- matching `src/train.py`'s exact
 discipline, confirmed by direct comparison this round (line 255-257,
 287, 304: `adamw_params` built once, referenced by every subsequent
-loop). `build-pipelined-8chip-tpu-kernel-3d-training` remains open
-pending v7's real result.
+loop).
+
+**v7's real result**: generation succeeded again (630 rows, matching
+v5/v6 exactly), student/teacher loads matched prior timing (student
+11.5s, 7 teacher workers 95.2s total) -- confirming generation and
+model-loading were never the problem. Training step 1 completed fast
+again (4.1s), but step 20 STILL never logged, now confirmed via real
+wall-clock timestamps: 10.4 real minutes elapsed with zero further
+progress. This is the THIRD independently-diagnosed-and-fixed cause
+(padding, then AdamW-on-XLA, then parameter-list caching) that did not
+resolve the real slowdown -- v7 was cancelled manually via the Kaggle
+web UI once this was confirmed.
+
+**Real root-cause reassessment**: all three prior fixes were verified
+correct in isolation (each matches `src/train.py`'s own proven, real
+hardware-tested pattern) but `src/train.py` trains a simple, uniform
+custom ~29M model, while round60 trains `LiquidAI/LFM2.5-350M`, a real
+off-the-shelf HF model with a genuinely MIXED conv+attention layer stack
+(confirmed live via `config.json`'s `layer_types`: alternating `conv`
+and `full_attention` blocks). The likely real cause is something inside
+HF's own `transformers.models.lfm2.modeling_lfm2` forward-pass code
+(inspected live this round -- no obviously data-dependent branch found
+by static reading, but the architecture's structural difference from
+every previously-proven-fast model in this project remains the
+strongest real lead) defeating PyTorch/XLA's lazy-tracing graph-cache
+reuse in a way none of the training-loop-level fixes could address.
+
+**v8 fix** (pushed as `heclgang/round60pipelined8chip` version 8): real,
+documented alternative found via live web research
+(docs.pytorch.org/xla) -- PyTorch/XLA's experimental eager-mode API
+(`torch_xla.experimental.eager_mode(True)`) executes uncompiled ops
+immediately like standard PyTorch, and `torch_xla.compile()` wraps just
+the training step function as one explicit graph boundary, sidestepping
+whatever implicit lazy-tracing behavior the prior three fixes could not
+resolve. Documented real tradeoff: ~45% of fully-compiled throughput --
+still far faster than the multi-minute-per-step behavior every prior
+attempt hit. Reverted to plain `torch.optim.AdamW` (safe again under an
+explicit compile boundary; the manual-Adam workaround was specifically
+for lazy-tracing's graph growth, not a concern here). Both eager_mode()
+and torch_xla.compile() calls are wrapped in try/except with a real
+fallback message, since this API's exact availability in the pinned
+transformers/torch_xla version combination on this Kaggle image was not
+independently confirmed before pushing.
+`build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v8's
+real result.
