@@ -7098,3 +7098,43 @@ eval symptom. Pushing as version 16 once the TPU slot frees (v15 held
 it through completion) -- this will surface the actual real Python
 exception class and message causing every fallback, which is the last
 missing piece before a genuine fix can be written.
+
+## Round 60 v16: the real exception, found -- and the real fix, v17
+
+v16's real traceback (surfaced live, not guessed) pinpointed the exact
+bug: `tok.apply_chat_template(messages, add_generation_prompt=True,
+return_tensors='pt')` returns a `BatchEncoding` (dict-like) on this
+transformers version, not a plain tensor -- `student_policy_fn` was
+passing that `BatchEncoding` positionally into `model.generate(inputs,
+...)`, and transformers' own `generate()` internals do
+`inputs_tensor.shape[0]`, which raises a real `AttributeError` when
+`inputs_tensor` is actually a `BatchEncoding` (its `__getattr__` only
+forwards known dict keys, not `.shape`). This is why EVERY real call
+across v11-v16 hit the except block and fell back to `rng.choice` --
+confirmed live via the real traceback:
+```
+File ".../transformers/generation/utils.py", line 2521, in generate
+    batch_size = inputs_tensor.shape[0]
+File ".../transformers/tokenization_utils_base.py", line 289, in __getattr__
+    raise AttributeError
+```
+Also confirmed via v16's own new instrumentation that v14's training-
+side chat-template fix DID work correctly all along: `real chat-
+template application: templated=632, fallback=0` -- the training path
+was never broken, only the eval path (`student_policy_fn`, added
+fresh in v11, was missing the `isinstance(inputs, dict)` guard that
+`teacher_policy_fn`'s own generation code already had since v11 --
+that guard is exactly why teacher generation, which has produced real
+usable data across every round, never hit this bug).
+
+**Real v17 fix**: `student_policy_fn` now extracts
+`enc['input_ids'] if isinstance(enc, dict) else enc` before calling
+`.to(chip)` and `model.generate(...)`, matching `teacher_policy_fn`'s
+already-proven pattern exactly. This is the real, root-cause fix for
+the entire v11-v16 diagnostic chain -- the eval mechanism should now
+finally call the real trained model for the first time since this
+before/after fitness signal was introduced. Pushing as version 17 once
+the TPU slot frees (v16 running to completion first for a clean
+record). If this produces a real nonzero fitness delta, it closes the
+entire v11-v17 investigation with the actual demonstrated measurable-
+improvement signal the standing `/goal` condition requires.
