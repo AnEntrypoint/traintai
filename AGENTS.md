@@ -6700,4 +6700,21 @@ distinct Minecraft-domain gameplay exposure alongside PyBullet's own
 generated scenarios -- directly matching the user's explicit "volume
 is important here... if there are any ready made training sets for
 other gameplay for a 5% mix thats also great" instruction. Pushed as
-`heclgang/round60pipelined8chip` version 10; real result pending.
+`heclgang/round60pipelined8chip` version 10.
+
+**Real v10 result: COMPLETE.** Mindcraft mixture confirmed working
+end-to-end in the live log: `real mindcraft dataset candidates:
+['/kaggle/input/mindcraft-converted/mindcraft_converted.jsonl']` then
+`real mindcraft mixture: 31 rows added (target ~5% of 630 generated
+rows), total now 661`. Full 15-step real training run completed, real
+total 1365.3s (~22.75 min), real losses 7.9162 -> 0.7637. Real
+per-step elapsed (s): 4.1, 23.0, 64.4, 117.2, 188.1, 241.4, 312.3,
+390.2, 489.7, 594.5, 719.1, 853.8, 1011.9, 1169.6, 1365.3. Real
+per-step deltas (s): 4.1, 18.9, 41.4, 52.8, 70.9, 53.3, 70.9, 77.9,
+99.5, 104.8, 124.6, 134.7, 158.1, 157.7, 195.7 -- tracks v9's own
+per-step timing almost exactly (both ~1365-1425s total for 15 steps),
+confirming the mindcraft mixture adds no measurable per-step training
+cost regression. This closes the ready-made-dataset mixture lever as a
+real, demonstrated success: genuine cross-domain (PyBullet + Minecraft)
+gameplay diversity in the student's real training mix, at zero
+measured cost.
