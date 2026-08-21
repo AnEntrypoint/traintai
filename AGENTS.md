@@ -7010,3 +7010,51 @@ round would confirm format mismatch was the true root cause across
 v11-v13; a still-zero delta would be a genuinely surprising result
 requiring a fresh hypothesis (e.g. multi-cycle persistence, or that 15
 steps is fundamentally too few regardless of format/magnitude).
+
+**Real v14 result: COMPLETE, and the genuinely surprising outcome
+happened.** `real student eval [BEFORE this cycle's training]:
+fitnesses=[36, 36, 36, 36, 36, 36, 35, 34], mean=35.62`. Notably, the
+real starting loss this round (6.6097) was meaningfully lower than
+v12/v13's starting losses (~7.9-8.2) -- real, indirect evidence the
+chat-template alignment DID change what the model sees, since a
+closer-to-expected input format plausibly starts closer to the base
+model's own natural completions. Full 15-step training completed, real
+total 1403.9s, real losses 6.6097 -> 0.8198, healthy monotonic
+decrease, no divergence. Yet: `real student eval [AFTER this cycle's
+training]: fitnesses=[36, 36, 36, 36, 36, 36, 35, 34], mean=35.62`.
+**Bit-identical to eval_before a THIRD consecutive time** (v12, v13,
+v14 have now each independently produced bit-identical before/after
+fitness lists under three different real interventions -- sampling
+fix, 5x lr, and format alignment). `=== REAL STUDENT FITNESS DELTA
+THIS CYCLE: 35.62 -> 35.62 (+0.00) ===`.
+
+**This pattern itself is the real signal now.** Three independent,
+substantively different fixes producing an identical null result is
+strong evidence the actual mechanism is something structural to the
+eval call itself, not any of the three hypotheses already tested and
+ruled out (eval variance, training magnitude, prompt format). Direct
+re-inspection of `student_policy_fn`'s code found a real, previously
+unexamined candidate: its `except Exception:` block silently falls
+back to `rng.choice(list(LEGAL_ACTIONS))` with NO logging -- and this
+fallback is JUST AS deterministic, call-for-call, as the sampling path
+would be (since `run_tournament` reseeds identical RNG streams on
+every `real_student_eval` call, per v12's own finding). If
+`tok.apply_chat_template(...)` or `model.generate(...)` has been
+throwing on every single call across v12-v14 -- plausible given
+`student_tok` is loaded via a real documented workaround (bare
+`PreTrainedTokenizerFast` + manually attached `chat_template.jinja`,
+not a standard `AutoTokenizer` load) -- the eval would silently never
+be testing the real model at all, and would produce exactly this
+symptom: identical fitness regardless of any real training change.
+
+**Real v15 fix: added direct observability, not another blind
+intervention.** `student_policy_fn` now counts and logs real generated-
+vs-fallback-exception calls (first 3 of each, plus a real per-eval
+summary line: `real student_policy_fn [{tag}] call counts:
+generated=N, fallback_exceptions=M`), and prints the first 3 real
+raw generated texts per eval so the actual model output (or the actual
+exception, if that's what's happening) is directly visible in the log
+instead of assumed. lr kept at v14's `1e-5` (no lever change this
+round -- pure diagnosis). Pushed as `heclgang/round60pipelined8chip`
+version 15; real result pending. This directly answers whether v12-14
+ever tested the real model at all.
