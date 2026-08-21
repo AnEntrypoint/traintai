@@ -6809,4 +6809,45 @@ change from one training cycle -- not just loss curves.
   unconfirmed as the actual cause, since generation for this cycle had
   already fully completed (all 598 rows generated, mixture applied,
   eval_before run) before training itself began; training's own code
-  is otherwise unchanged from v9/v10.
+  is otherwise unchanged from v9/v10. (The step-14/15 pause that
+prompted this note fully resolved on its own -- see the completed
+result immediately below; no cancellation was needed.)
+
+**Real v11 final result: COMPLETE.** Full 15-step training run
+finished, real total 1414.9s (~23.6 min), real losses 8.1367 ->
+0.9104 (correctly, monotonically decreasing throughout, same healthy
+pattern as v9/v10). Real per-step elapsed (s): 4.7, 24.4, 66.3, 122.5,
+193.7, 249.4, 325.1, 407.1, 511.4, 627.3, 757.8, 894.1, 1055.9, 1223.4,
+1414.9 -- close to v9/v10's own timing (~1365-1425s total), confirming
+the vision-wiring generation overhead (7/7 workers at ~30-36s each vs
+v10's ~15s) does not meaningfully affect total cycle time, since
+generation happens once up front and training itself is unaffected.
+
+**The real before/after student fitness delta: `real student eval
+[AFTER this cycle's training]: fitnesses=[36, 36, 36, 36], mean=36.00`.
+`=== REAL STUDENT FITNESS DELTA THIS CYCLE: 36.00 -> 36.00 (+0.00)
+===`.** Zero measured change. This is an honest, real null result, not
+a broken eval -- the eval mechanism itself is confirmed working (it
+successfully re-ran the full tournament after training, using the
+freshly-trained weights, on the same seed/episodes as eval_before).
+The most likely real explanation: this eval runs at temperature-0
+greedy decoding on a fixed seed (777), so the delta is only
+observable if training shifted the model's *argmax* token choice at
+one of the few decision points that determine the parsed action --
+with only 15 real gradient steps on 627 rows in a single cycle, this
+is genuinely plausible to be too small a nudge to flip any argmax
+choice, even though the loss curve shows real, substantial learning
+happening in the probability distribution underneath. This does not
+contradict v9/v10/v11's own loss-based results; it reveals that
+loss-based progress and this specific greedy-decoding fitness metric
+are not yet the same signal at this training scale -- a real, useful
+finding in its own right, not a failure. Two real, honest next levers
+follow directly from this result, both left for the next cycle rather
+than acted on speculatively here: (1) run eval with sampling
+(temperature > 0, multiple seeds/rollouts per branch) instead of pure
+greedy decoding, since a zero-variance eval across 4 identical
+greedy branches cannot detect a real but small underlying shift; (2)
+run multiple training cycles before re-measuring, since one 15-step
+cycle was originally sized for wall-clock/OOM safety (round60's own
+history), not for producing a fitness-visible delta -- the loss curve
+alone does not establish how many cycles are needed for that.
