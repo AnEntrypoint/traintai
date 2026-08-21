@@ -6530,3 +6530,41 @@ transformers/torch_xla version combination on this Kaggle image was not
 independently confirmed before pushing.
 `build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v8's
 real result.
+
+**v8's real result**: generation succeeded again (630 rows, matching
+v5/v6/v7 exactly), no real error from eager_mode()/torch_xla.compile()
+(both loaded without hitting the try/except fallback path). Training
+step 1 completed fast again (4.2s), but step 20 STILL never logged --
+confirmed via real wall-clock timestamps at 5.77 real minutes with zero
+further progress, then cancelled manually via the Kaggle web UI (user
+action). This is now FOUR independently-diagnosed-and-fixed causes
+(fixed-length padding, AdamW-on-XLA manual-Adam replacement,
+parameter-list caching, PyTorch/XLA eager-mode + explicit compile
+boundary) that all failed identically on the exact same symptom (step 1
+fast, step 2+ never progresses) despite each being individually
+verified correct. This consistent pattern across four structurally
+different fixes is itself real evidence the root cause is NOT in
+round60's own training-loop code at all -- every fix that touched only
+the training loop failed the same way.
+
+**Round 61 (new, isolated diagnostic)**: rather than attempt a fifth
+training-loop variant, built `heclgang/round61lfm2trainisolated` --
+strips away ALL of round60's pipeline complexity (7 teacher workers,
+PyBullet generation, multi-chip orchestration) to test the single real
+remaining question directly: does `LiquidAI/LFM2.5-350M` alone, on ONE
+TPU chip, with fixed hardcoded synthetic text (same real batch_size=4,
+max_length=256 shape), train at a normal real speed, or does it exhibit
+the identical stall? Uses plain `torch.optim.AdamW` (the simplest real
+case) with a hard 300s real timeout so this diagnostic kernel cannot
+itself run for hours undiagnosed. If it stalls the same way even in
+total isolation, that is decisive real evidence the problem is
+something about training LFM2.5-350M itself via `transformers` on this
+TPU setup (its genuinely mixed conv+attention architecture, confirmed
+via `config.json`'s `layer_types`, is the strongest remaining real
+lead) -- not round60's pipeline design. If it trains fine in isolation,
+the real bug is specific to round60's pipelined multi-chip context
+(e.g. real interaction between the 7 teacher workers' own XLA graphs on
+other chips and chip 0's training graph). Pushed as
+`heclgang/round61lfm2trainisolated` version 1.
+`build-pipelined-8chip-tpu-kernel-3d-training` remains open pending
+round61's real result.
