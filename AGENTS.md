@@ -6452,13 +6452,38 @@ call) -- round60's training loop used plain `torch.optim.AdamW`, exactly
 the already-known-broken path, independently rediscovering the same real
 hardware behavior. The padding fix was necessary but not sufficient.
 
-**v6 fix** (built, staged at `C:/dev/kaggle/round60-pipelined-8chip`,
-pending v5 reaching a terminal state to free the single real TPU slot):
-replaced `torch.optim.AdamW` with the same hand-rolled manual Adam update
-(static per-tensor ops only: `m.mul_(0.9).add_(g_, alpha=0.1)`,
+**v6 fix**: replaced `torch.optim.AdamW` with a hand-rolled manual Adam
+update (static per-tensor ops only: `m.mul_(0.9).add_(g_, alpha=0.1)`,
 `v.mul_(0.95).addcmul_(g_, g_, value=0.05)`, bias-corrected
-`addcdiv_`) plus an explicit `xm.mark_step()` per step, ported directly
-from `src/train.py`'s own proven `use_xla_manual_adam` path -- confirmed
-steady at 0.18s/step from step 2 in that prior session's real smoke test.
-`build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v6's
-real push and result.
+`addcdiv_`) plus an explicit `xm.mark_step()` per step, ported from
+`src/train.py`'s own proven `use_xla_manual_adam` path (confirmed steady
+at 0.18s/step from step 2 in that prior session's real smoke test). v5
+was cancelled manually via the Kaggle web UI (user action) to free the
+TPU slot, since it was correct but too slow to usefully finish; v6 pushed
+immediately after.
+
+**v6's real result**: generation succeeded again (630 rows, 94.3s teacher
+load, matching v5's numbers exactly -- confirming generation was never
+the problem). Training step 1/157 completed fast (4.1s), but step 20
+never logged even after ~9.5 real minutes -- the manual-Adam fix alone
+did NOT fully resolve the slowdown. Root cause found by re-reading
+`src/train.py` more carefully: it caches its parameter list into real
+Python lists (`decay`/`no_decay`/`adamw_params`) ONCE before the training
+loop and iterates that SAME cached list every step; round60 v6 instead
+called the live `student.parameters()` generator fresh 3 times per step
+(once for zero-grad, once for the update loop, plus the initial
+`adam_m`/`adam_v` construction) -- re-materializing the generator every
+step was itself enough to defeat XLA's graph reuse, even with the manual
+Adam math otherwise correct. v6 was cancelled manually via the Kaggle web
+UI once this was diagnosed (confirmed via `kaggle kernels status`
+showing `ERROR` after the user's cancellation).
+
+**v7 fix** (pushed as `heclgang/round60pipelined8chip` version 7,
+immediately after v6's cancellation freed the TPU slot): caches
+`train_params = [p for p in student.parameters() if p.requires_grad]`
+ONCE before the loop, and both the zero-grad and the manual-Adam update
+loop iterate that same cached list -- matching `src/train.py`'s exact
+discipline, confirmed by direct comparison this round (line 255-257,
+287, 304: `adamw_params` built once, referenced by every subsequent
+loop). `build-pipelined-8chip-tpu-kernel-3d-training` remains open
+pending v7's real result.
