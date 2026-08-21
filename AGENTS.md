@@ -6851,3 +6851,18 @@ run multiple training cycles before re-measuring, since one 15-step
 cycle was originally sized for wall-clock/OOM safety (round60's own
 history), not for producing a fitness-visible delta -- the loss curve
 alone does not establish how many cycles are needed for that.
+
+## Round 60 v12: acted on the zero-delta finding -- sampling-based eval
+
+Acted immediately on v11's real finding (lever 1 above): switched
+`student_policy_fn`'s eval-time generation from `do_sample=False`
+(pure greedy) to `do_sample=True, temperature=0.8, top_p=0.95`, with
+a per-branch-RNG-seeded `torch.manual_seed` so results stay
+reproducible run-to-run while allowing real variance both within a
+branch set and between eval_before/eval_after. Also raised
+`real_student_eval`'s `n_branches` from v11's 4 to 8, to reduce noise
+in the mean given sampling now introduces real variance where greedy
+had none. Training-time generation (the teacher workers' own
+distillation rollouts) is unchanged -- this fix is scoped to the
+eval-only student policy, not the data-generation path. Pushed as
+`heclgang/round60pipelined8chip` version 12; real result pending.
