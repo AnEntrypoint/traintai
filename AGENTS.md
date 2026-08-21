@@ -7138,3 +7138,34 @@ the TPU slot frees (v16 running to completion first for a clean
 record). If this produces a real nonzero fitness delta, it closes the
 entire v11-v17 investigation with the actual demonstrated measurable-
 improvement signal the standing `/goal` condition requires.
+
+## Round 60 v17: the fix's own fix was wrong too -- BatchEncoding is not a dict
+
+Real, live confirmation that v17's `isinstance(enc, dict)` check was
+ITSELF broken: `real student_policy_fn [BEFORE this cycle's training]
+call counts: generated=0, fallback_exceptions=240` -- identical
+symptom, identical traceback (`AttributeError` at the exact same
+`inputs_tensor.shape[0]` line), as v11-v16. Root cause, confirmed via
+direct local inspection of `transformers.tokenization_utils_base.
+BatchEncoding.__mro__`: `BatchEncoding` subclasses `collections.
+UserDict`, NOT `dict` -- so `isinstance(enc, dict)` evaluates `False`
+on a real `BatchEncoding`, and v17's code fell through to the same
+broken `else: enc` branch, passing the whole `BatchEncoding` into
+`model.generate()` again. A real, humbling lesson: the "root-cause
+fix" itself needs the same rigor as the original diagnosis -- verify
+the actual type hierarchy, don't assume `isinstance(x, dict)` covers
+dict-like classes.
+
+**Real v18 fix, verified locally before push (not blind this time)**:
+confirmed live via a real local Python check
+(`transformers.tokenization_utils_base.BatchEncoding().items` exists,
+`isinstance(BatchEncoding(...), dict)` is `False`,
+`hasattr(BatchEncoding(...), 'items')` is `True`, and a plain
+`torch.Tensor` has no `.items`) that `hasattr(enc, 'items')` correctly
+discriminates a `BatchEncoding`/dict-like object from a plain tensor,
+unlike `isinstance(enc, dict)`. Replaced the v17 check with `enc[
+'input_ids'] if hasattr(enc, 'items') else enc`. Pushing as version 18
+once the TPU slot frees (v17 running to completion first). This is the
+real, locally-verified fix -- the prior two attempts (v16's traceback
+discovery, v17's isinstance check) each closed one real gap but the
+type-check itself was the final remaining bug.
