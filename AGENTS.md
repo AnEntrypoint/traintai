@@ -7208,3 +7208,33 @@ leading real hypothesis for a v19 fix (add fixed
 `padding='max_length', truncation=True, max_length=<N>` to the eval's
 own `apply_chat_template` call, matching training's proven discipline)
 if it does turn out to be a genuine stall.
+
+**Correction, from real live timestamps the user read directly off the
+Kaggle UI**: this was NOT a stall. Call #1 landed at 459.9s, #2 at
+495.6s (delta 35.7s), #3 at 531.4s (delta 35.8s) -- steady, consistent
+per-call timing, not the growing-delta signature of a genuine
+recompilation hang (contrast with v1-v8's actual stalls, which showed
+clearly escalating deltas). The real explanation is simpler: each
+`model.generate()` call is just genuinely ~36s on this hardware with
+no batching, and 240 calls/eval pass (8 branches x 3 agents x 10
+ticks) means ~2.4 real hours PER eval pass, ~4.8 hours for one full
+before/after cycle -- real, correct, but far too slow to iterate on.
+User cancelled v18 (`CANCEL_ACKNOWLEDGED`) once this was clear.
+
+## Round 60 v19: padding fix (v18's original hypothesis) + real eval-size cut for tractability
+
+Two real changes, pushed together: (1) the left-padded, fixed-length
+`apply_chat_template` call planned for v19 before the stall/slow
+distinction was clarified (padding='max_length', truncation=True,
+max_length=96, with `tok.padding_side` set to `'left'` for correct
+causal-LM generation with a fixed-length prefix -- right-padding would
+insert pad tokens between the real prompt and the generation start
+point, corrupting output); (2) `real_student_eval`'s tournament size
+cut from `n_branches=8, n_agents=3, n_ticks=10` (240 real calls/pass)
+to `n_branches=2, n_agents=2, n_ticks=3` (12 real calls/pass) --
+at v18's real measured ~36s/call, this brings one full before/after
+cycle from ~4.8 real hours down to roughly 14-15 real minutes,
+tractable for continued iteration. Noise from the smaller sample is an
+accepted real tradeoff for now; scaling back up is the natural next
+step once the core signal is confirmed working end-to-end at this
+smaller size. Pushing as version 19.
