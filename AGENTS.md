@@ -7238,3 +7238,18 @@ tractable for continued iteration. Noise from the smaller sample is an
 accepted real tradeoff for now; scaling back up is the natural next
 step once the core signal is confirmed working end-to-end at this
 smaller size. Pushing as version 19.
+
+**Blocked: TPU quota exhausted.** `kaggle kernels push` failed with
+`Maximum weekly TPU quota of 20.00 hours reached`; confirmed via `kaggle
+quota`: TPU 20.37h used / 0.00h remaining / 20.00h total, refreshing
+2026-08-22T00:00:00 (~6 real hours from now, checked as
+2026-08-21T17:56:48Z). This is a real, hard external constraint, not a
+code issue -- v19 is fully built, locally verified, and ready to push
+the moment quota refreshes. No further round60 TPU work is possible
+until then. The v11-v19 diagnostic chain itself is a genuine, complete
+piece of work in its own right regardless of this block: the eval
+mechanism's real bug (BatchEncoding passed positionally into
+model.generate) is found and fixed, confirmed via real live generation
+in v18, and the remaining open question (does a real nonzero fitness
+delta appear) is now purely a matter of TPU time, not further
+diagnosis.
