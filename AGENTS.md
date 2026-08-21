@@ -6718,3 +6718,41 @@ cost regression. This closes the ready-made-dataset mixture lever as a
 real, demonstrated success: genuine cross-domain (PyBullet + Minecraft)
 gameplay diversity in the student's real training mix, at zero
 measured cost.
+
+## Real research: TESS-Computer/minecraft-vla-stage1 rejected as a second mixture source
+
+Investigated the other real candidate dataset identified earlier
+(`TESS-Computer/minecraft-vla-stage1`, MIT-licensed, 305 real parquet
+shards, ~50000 rows/shard, columns `['video_id', 'frame_idx', 'action',
+'image']`) as a possible second ready-made-dataset lever, given round60
+v11's new vision-wiring capability. Real direct inspection of shard
+00000 (50000 real rows) confirmed the action schema: `<|action_start|>
+mouse_x mouse_y scroll ; K1 ; K2 ; K3 ; K4 <|action_end|>` -- raw VPT
+keyboard/mouse deltas at 4x50ms sub-chunks per 5Hz frame (e.g. `0 0 0 ;
+LMB ; LMB ; LMB ; LMB` for mining, `51 63 0 ; D W ; W ; W ; Space W` for
+strafe-jump-forward). This is VPT Stage 1 "action pretraining" -- no
+task/goal text anywhere by design (instructions are a separate,
+unreleased Stage 2 dataset).
+
+**Rejected as a mixture source, both modes considered:**
+1. Text-only student mixture (mindcraft's pattern): round60's real
+   action space is a closed 5-word vocabulary (`LEGAL_ACTIONS =
+   {"move_toward", "attack", "trade", "wait", "flee"}`, confirmed in
+   `pb_tournament.py`). TESS's raw keyboard/mouse deltas have no honest
+   mapping onto that vocabulary -- converting would mean fabricating
+   labels, which violates this project's own no-fabrication discipline
+   (the same discipline `mindcraft_convert.py` enforces via honest
+   drop-counting).
+2. Teacher vision few-shot: confirmed `build_round60.py`'s student
+   training cell is strictly text-only (no image tensors reach the
+   student); only the teacher is vision-capable. But Minecraft
+   screenshots as few-shot reference for a teacher rendering PyBullet
+   survival-sim frames don't transfer -- different visual domain,
+   different action space, no shared task framing. Would add prompt
+   noise, not signal.
+3. Cost: one shard alone is ~2.2GB, 305 shards total -- expensive to
+   stage for a dataset that doesn't fit the architecture regardless.
+
+No converter written. `heclgang/mindcraft-converted` remains the right
+ready-made-dataset lever for round60 as currently architected; this
+candidate is a real, considered dead end, not an unexplored option.
