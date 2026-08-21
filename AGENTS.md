@@ -6919,3 +6919,16 @@ this eval regardless of design. Both are cheap, targeted, real
 experiments -- preferred over further eval-mechanism changes, since
 the eval mechanism itself (sampling, seeding, tournament fitness) is
 now confirmed working correctly end-to-end across v11 and v12.
+
+## Round 60 v13: controlled learning-rate test (lever 1 from v12)
+
+Acted on v12's cheaper, faster real lever: raised `lr` in the
+training cell's `torch.optim.AdamW` from `1e-5` to `5e-5` (5x), all
+else identical (same 15-step cap, same batch size 4, same sampling-
+based eval from v12). This is a controlled test: if the real
+before/after fitness delta becomes nonzero at 5x lr with everything
+else unchanged, it confirms training magnitude (not the eval
+mechanism, already validated in v11/v12) was the limiting factor. If
+still 0.00, that's real evidence pointing toward lever 2 instead
+(multi-cycle persistence) or a larger lr multiplier. Pushed as
+`heclgang/round60pipelined8chip` version 13; real result pending.
