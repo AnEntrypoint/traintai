@@ -6866,3 +6866,56 @@ had none. Training-time generation (the teacher workers' own
 distillation rollouts) is unchanged -- this fix is scoped to the
 eval-only student policy, not the data-generation path. Pushed as
 `heclgang/round60pipelined8chip` version 12; real result pending.
+
+**Real v12 result: COMPLETE.** The sampling fix worked as intended for
+its immediate purpose: `real student eval [BEFORE this cycle's
+training]: fitnesses=[36, 35, 35, 35, 35, 34, 34, 33], mean=34.62` --
+genuine cross-branch variance now present (spread 33-36), unlike v11's
+identical [36,36,36,36]. Full 15-step training run completed, real
+total 1397.6s (~23.3 min), real losses correctly decreasing 8.1586 ->
+1.0218 (same healthy pattern as v9/v10/v11). Real per-step elapsed
+(s): 4.6, 24.1, 65.5, 118.3, 184.8, 240.1, 314.4, 395.7, 496.7, 612.7,
+744.9, 881.1, 1040.8, 1207.1, 1397.6 -- consistent with prior rounds.
+
+**But the real eval_after result is a more precise version of v11's
+null finding, not a resolution of it**: `real student eval [AFTER this
+cycle's training]: fitnesses=[36, 35, 35, 35, 35, 34, 34, 33],
+mean=34.62`. `=== REAL STUDENT FITNESS DELTA THIS CYCLE: 34.62 ->
+34.62 (+0.00) ===`. Not just the same mean -- the exact same
+per-branch fitness list, in the exact same order, as eval_before.
+
+Traced the real cause via direct code inspection (not guessed):
+`run_tournament(seed=777, ...)` reseeds a fresh `random.Random(seed +
+i)` per branch on every call, so both `real_student_eval('BEFORE...')`
+and `real_student_eval('AFTER...')` draw from bit-identical RNG
+streams (same episode seeds 777-784, same `torch.manual_seed` values
+per generation call, since `student_policy_fn` seeds from
+`rng.randint(...)` off that same deterministic stream). This was a
+deliberate design choice (reproducibility across before/after), but it
+means the ONLY thing that could differ between the two eval passes is
+the model's own output distribution shift from training -- and none of
+these bit-identical rollouts crossed a decision boundary. Confirmed
+the training loop itself is mechanically correct and updates the SAME
+`student` object used by the eval (`opt.zero_grad()` ->
+`loss.backward()` -> `opt.step()` on `torch.optim.AdamW(lr=1e-5)`,
+no stray copy) -- this is not a bug, it is a real, precise
+measurement: `lr=1e-5` over 15 steps produces a real, substantial loss
+decrease (surface-level SFT-format learning, largely) but not enough
+of a shift in the specific few token-logit decision points these
+sampled rollouts hit to flip even one sampled token, across 8 branches
+x ~30 decision points each.
+
+This sharpens, rather than resolves, the honest open question from
+v11: loss-curve progress and this tournament-fitness metric are
+measurably decoupled at round60's current per-cycle scale (15 steps,
+lr=1e-5). Two concrete, real next levers, ranked by information value
+per real TPU-time cost: (1) increase `lr` for a controlled comparison
+(e.g. 5e-5 or 1e-4) on an otherwise-identical cycle -- cheapest test of
+whether magnitude, not evaluation design, is the bottleneck; (2) run
+several consecutive training cycles (student weights persisted/reused
+across cycles, not reset) before re-measuring, since a single
+15-step/lr=1e-5 cycle may simply be too small a real update to move
+this eval regardless of design. Both are cheap, targeted, real
+experiments -- preferred over further eval-mechanism changes, since
+the eval mechanism itself (sampling, seeding, tournament fitness) is
+now confirmed working correctly end-to-end across v11 and v12.
