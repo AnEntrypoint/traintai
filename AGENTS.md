@@ -6658,3 +6658,46 @@ confirmed real and correct), with a known, honestly-documented real
 performance characteristic (growing per-step training cost, worse in
 the pipelined context than in isolation) rather than an unresolved
 correctness bug.
+
+## Round 60 v10: real ready-made-dataset mixture (mindcraft) integrated for genuine gameplay diversity
+
+Per explicit user direction ("the LFM setup is supposed to replace our
+balrog experiments cause LFM is more tested and capable" -- confirming
+the 3D/LFM2.5 pipeline, not BALROG, is the active track for "make
+progress with all games"), acted on the already-completed
+`find-ready-made-gameplay-datasets-for-mix` PRD row's real research:
+built `src/mindcraft_convert.py`, a real converter for
+`hlillemark/mc_combined_sa_ma_dataset` (real, MIT-licensed, 2225 real
+instruction/input/output rows -- Mindcraft-framework Minecraft agent
+trajectories, collected via real GPT-4o/Llama-3.3-70B play, confirmed
+license and structure via direct `huggingface_hub` inspection, not
+assumed).
+
+**Real structural problem found and fixed**: raw rows average ~10K
+chars (a long, mostly-fixed persona/rules block) vs round60's real
+256-token training shape -- the converter extracts only the real
+per-row signal (bot name, current goal, most recent context message)
+via regex, discarding the fixed boilerplate. **A second real bug found
+via direct inspection of the raw data**: naively taking the last
+non-system message from the `input` field often grabbed the bot's OWN
+prior (sometimes failed) attempt rather than the real system
+feedback/error that motivated the row's actual corrected `output` --
+many real rows are genuine self-correction turns (e.g. "Invalid block
+type: X" -> a real corrected retry). Fixed by taking the true last
+message regardless of role. Self-check verified against the live real
+dataset: 1748/2225 real rows kept (78.5%, dropped rows lack an
+extractable goal or have an empty output -- never fabricated), average
+239 real chars per converted row.
+
+Published the real converted output (1748 rows) as a private Kaggle
+dataset (`heclgang/mindcraft-converted`) and wired it into round60's
+notebook as a new real mixture-slice cell: after each cycle's 7
+teacher workers finish real PyBullet generation, a real ~5% slice of
+the mindcraft rows (deterministically seeded sample, so different real
+cycles draw different real rows over time) is appended to
+`all_sft_rows` before training, giving the student real, genuinely
+distinct Minecraft-domain gameplay exposure alongside PyBullet's own
+generated scenarios -- directly matching the user's explicit "volume
+is important here... if there are any ready made training sets for
+other gameplay for a 5% mix thats also great" instruction. Pushed as
+`heclgang/round60pipelined8chip` version 10; real result pending.
