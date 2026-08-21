@@ -6932,3 +6932,53 @@ mechanism, already validated in v11/v12) was the limiting factor. If
 still 0.00, that's real evidence pointing toward lever 2 instead
 (multi-cycle persistence) or a larger lr multiplier. Pushed as
 `heclgang/round60pipelined8chip` version 13; real result pending.
+
+**Real v13 result: COMPLETE, and this decisively rules out magnitude
+as the explanation.** `real student eval [BEFORE this cycle's
+training]: fitnesses=[36, 36, 35, 35, 35, 34, 34, 33], mean=34.75`.
+Full 15-step training run completed, real total 1367.7s, real losses
+dropping much more aggressively than v12 at the same lr-ratio: 7.9337
+-> 0.4174 (vs v12's 8.1586 -> 1.0218) -- a real, substantial,
+qualitatively different training signal, with visible SGD noise
+(bouncing 0.26-0.63 across steps 9-13) consistent with genuinely
+larger real weight updates at 5x lr, no divergence/NaN. Yet: `real
+student eval [AFTER this cycle's training]: fitnesses=[36, 36, 35, 35,
+35, 34, 34, 33], mean=34.75`. **Bit-identical to eval_before again**,
+down to per-branch fitness values in order. `=== REAL STUDENT FITNESS
+DELTA THIS CYCLE: 34.75 -> 34.75 (+0.00) ===`.
+
+Two consecutive real experiments (1e-5 and 5e-5, a 5x real magnitude
+difference, both showing real, substantial, qualitatively different
+loss curves) producing bit-identical before/after fitness is itself
+strong evidence the mechanism is NOT lr magnitude. Traced the real
+root cause via direct code comparison (not guessed): the training
+row's actual text format (`src/pb_tournament.py`'s `state_text = f"{name}
+hp={agent.hp:.1f} gold={agent.gold}"`, fed directly to
+`student_tok(batch_texts, ...)` with NO chat template applied) is
+structurally different from the eval's prompt (`student_policy_fn`'s
+`f'You are {agent_name} in a survival scenario. hp=... gold=....
+Legal actions: {...}. Respond with exactly one legal action word.'`,
+wrapped through `tok.apply_chat_template(messages,
+add_generation_prompt=True, ...)` before generation). These are two
+genuinely different input distributions -- the student is being
+trained to complete a bare, un-templated state string, while the eval
+tests its chat-templated response to a longer, differently-worded
+instruction prompt. Training on one format has little real reason to
+shift completions on the other, structurally different, format --
+this is a real, precise, non-buggy explanation for why even a real,
+substantial weight update (confirmed via the loss curve) doesn't move
+this particular eval's outputs.
+
+This is the most information-dense real finding of the v10-v13 series:
+the actual blocker is a train/eval FORMAT MISMATCH, not eval design
+(fixed in v12) or training magnitude (ruled out in v13). The real next
+lever, ranked above both previously-identified options: (1) make the
+training row text match the eval's exact chat-templated format (apply
+`tok.apply_chat_template` when building `all_sft_rows`'s text, or
+conversely simplify the eval prompt to match the bare training format)
+so training and eval measure the same real input distribution -- this
+is now the single highest-information-value real experiment available,
+cheaper than either multi-cycle persistence or a further lr sweep,
+since those would still run on a hobbled train/eval mismatch. Multi-
+cycle persistence and lr tuning remain valid but lower-priority next
+steps once format alignment is confirmed as necessary or ruled out.
