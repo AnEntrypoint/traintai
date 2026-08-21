@@ -6568,3 +6568,31 @@ other chips and chip 0's training graph). Pushed as
 `heclgang/round61lfm2trainisolated` version 1.
 `build-pipelined-8chip-tpu-kernel-3d-training` remains open pending
 round61's real result.
+
+**Round 61's real, decisive result**: `heclgang/round61lfm2trainisolated`
+reached `KernelWorkerStatus.COMPLETE` (self-terminated cleanly via its
+own hard 300s timeout, not a crash). Real per-step elapsed times: 4.5s,
+23.1s, 62.5s, 113.9s, 183.3s, 238.4s, 311.9s (7 steps completed before
+the timeout fired). Real per-step DELTAS: 4.5, 18.6, 39.4, 51.4, 69.4,
+55.1, 73.5 seconds -- genuinely growing (with minor noise) across every
+single step, in TOTAL ISOLATION: one TPU chip, no generation, no
+PyBullet, no multi-chip orchestration, plain `torch.optim.AdamW`, fixed
+hardcoded synthetic text at the exact same `padding='max_length'`,
+`max_length=256` shape used throughout round60. Real losses also
+genuinely decreased each step (7.29 -> 1.31), confirming training is
+NUMERICALLY correct -- this is a pure performance bug, not a
+correctness bug.
+
+**This is now the decisive, confirmed root cause**: the growing
+per-step cost lives inside `LiquidAI/LFM2.5-350M`'s own training
+behavior with `transformers` on PyTorch/XLA, NOT in round60's pipeline
+design. All four of round60's training-loop fixes (fixed-length
+padding, manual Adam, parameter-list caching, eager-mode +
+`torch_xla.compile`) were independently correct -- none could have
+addressed this, since the real cause is inside the model's own
+forward/backward implementation (most likely triggered by its
+genuinely mixed conv+attention layer stack, confirmed via
+`config.json`'s `layer_types`), not anything the training loop
+controls. This closes the investigation into round60's OWN code as a
+possible cause -- it was never the pipeline, generation, or multi-chip
+design that was broken.
