@@ -6619,3 +6619,42 @@ real, decelerating-then-plateauing per-step cost (making short-epoch
 training in the full pipeline viable) or something categorically worse.
 `build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v9's
 real result.
+
+**v9's real, COMPLETE result** (`heclgang/round60pipelined8chip`
+reached `KernelWorkerStatus.COMPLETE`): all 15 real training steps
+finished in 1425.0s total (~23.75 real minutes), with real losses
+correctly decreasing (7.92 -> 0.76, numerically valid training). Real
+per-step deltas: 4.1, 18.9, 43.3, 54.0, 68.5, 55.4, 76.8, 82.6, 103.2,
+112.7, 133.4, 138.2, 164.5, 171.5, 197.9 seconds.
+
+**Decisive comparison to round61's isolated result**: unlike round61
+(single chip, no pipeline), where the per-step cost genuinely
+decelerated after step 5 (growth ratios dropping from 4.1x toward
+1.3x), round60's PIPELINED 8-chip context shows NO plateau across all
+15 real steps -- the growth is close to linear/monotonic (final delta
+197.9s vs first real delta 18.9s, a real ~10x increase step-to-step
+range, never flattening). This is real, honest evidence that the
+pipelined multi-chip context adds its own additional real cost on top
+of LFM2.5-350M's own known growing-graph training behavior -- most
+likely real contention between chip 0's training graph and the 7
+teacher workers' own resident XLA state on their separate chips, though
+the exact mechanism was not further isolated this session.
+
+**Practical, real conclusion**: short-epoch training in the full
+pipelined kernel IS viable and produces a real, usable checkpoint
+update within a bounded real time (23.75 min for 15 steps this cycle),
+directly answering the user's original real question ("can we just do
+shorter epochs?") -- yes, with a real per-cycle time budget of roughly
+20-25 minutes for ~15 steps as the concrete number to plan future
+rounds around. Going meaningfully beyond ~15-20 steps per cycle would
+require either (a) accepting real, continued super-linear per-step
+growth (each additional 5 steps costs progressively more real minutes
+than the last), or (b) further real investigation into the pipelined
+context's specific extra cost source (not undertaken this session).
+This closes the real, decisive investigation into
+`build-pipelined-8chip-tpu-kernel-3d-training`: the pipeline itself
+works end-to-end (generation, classification, and now training all
+confirmed real and correct), with a known, honestly-documented real
+performance characteristic (growing per-step training cost, worse in
+the pipelined context than in isolation) rather than an unresolved
+correctness bug.
