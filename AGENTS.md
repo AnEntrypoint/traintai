@@ -7058,3 +7058,43 @@ instead of assumed. lr kept at v14's `1e-5` (no lever change this
 round -- pure diagnosis). Pushed as `heclgang/round60pipelined8chip`
 version 15; real result pending. This directly answers whether v12-14
 ever tested the real model at all.
+
+**Real v15 result: COMPLETE, and this decisively confirms the real
+root cause of the entire v11-v14 saga.** `real student_policy_fn
+[BEFORE this cycle's training] call counts: generated=0,
+fallback_exceptions=240` and `real student_policy_fn [AFTER this
+cycle's training] call counts: generated=0, fallback_exceptions=240`.
+**The trained model was called ZERO times across all 240 real decision
+points (8 branches x 3 agents x 10 ticks), in BOTH the before and
+after eval.** Every one of v11-v15's "before/after fitness deltas" has
+actually been measuring `random.Random`'s own deterministic behavior
+under `run_tournament`'s per-call reseeding, not the model at all --
+this fully explains why sampling (v12), 5x lr (v13), and format
+alignment (v14) all independently produced bit-identical results:
+none of those real fixes had any way to matter, because the code path
+that would have exercised them was never reached.
+
+The logged exception was an unhelpful bare `AttributeError()`
+(`repr(e)` on a message-less exception gives no detail) -- real, not
+guessed, but not yet actionable. Direct re-inspection of the training
+cell's own `_chat_template_row` (added in v14) found it shares the
+EXACT SAME bare `except Exception: return raw_text` pattern with NO
+logging -- meaning v14's own "fix" may never have actually applied the
+chat template during training either, silently falling back to the
+original un-templated text every single row. This is a second,
+parallel instance of the same real bug class (silent except-swallow
+masking a real failure), independently found via direct code
+inspection, not assumed from the eval's symptom alone.
+
+**Real v16 fix: real full tracebacks at both real call sites**, not
+another blind guess. `student_policy_fn`'s except block now prints
+`traceback.format_exc()` (not bare `repr(e)`) for its first 3
+exceptions per eval. The training cell's `_chat_template_row` gained
+the same real fallback counter and traceback logging pattern, plus a
+new summary print (`real chat-template application: templated=N,
+fallback=M`) so it's now directly verifiable whether v14's format fix
+ever actually took effect during training, not just assumed from the
+eval symptom. Pushing as version 16 once the TPU slot frees (v15 held
+it through completion) -- this will surface the actual real Python
+exception class and message causing every fallback, which is the last
+missing piece before a genuine fix can be written.
