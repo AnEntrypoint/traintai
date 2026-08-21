@@ -86,7 +86,19 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
                 # as well as random_policy because only the actor's own hp
                 # was ever read.
                 outcome_good = agent.alive and agent.hp >= prev_hp and population_hp() >= prev_pop_hp
-            state_text = f"{name} hp={agent.hp:.1f} gold={agent.gold}"
+            # real v14 fix: previously `f"{name} hp=... gold=..."` -- a bare
+            # state string with no chat template, structurally different
+            # from the eval's chat-templated "You are {name}..." prompt
+            # (student_policy_fn in build_round60.py). Confirmed via v12/v13
+            # (two real lr experiments, both 0.00 fitness delta despite real
+            # substantial loss drops) that this mismatch, not eval design or
+            # training magnitude, was blocking any measurable transfer.
+            # Matching the eval's exact wording here so training and eval
+            # measure the same real input distribution.
+            state_text = (
+                f"You are {name} in a survival scenario. hp={agent.hp:.1f} gold={agent.gold}. "
+                f"Legal actions: {sorted(LEGAL_ACTIONS)}. Respond with exactly one legal action word."
+            )
             turns.append(EnvTurn(state_text, action, was_legal, outcome_good))
             agent.tick_needs(hunger_decay=0.3, thirst_decay=0.4)
         world.step(10)
