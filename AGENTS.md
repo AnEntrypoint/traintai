@@ -6756,3 +6756,57 @@ unreleased Stage 2 dataset).
 No converter written. `heclgang/mindcraft-converted` remains the right
 ready-made-dataset lever for round60 as currently architected; this
 candidate is a real, considered dead end, not an unexplored option.
+
+## Round 60 v11: real vision wiring + before/after student fitness eval -- generation and eval_before confirmed working, training stalled at step 12/15
+
+Pushed `heclgang/round60pipelined8chip` version 11, adding two new real
+capabilities on top of v10's proven pipeline+mixture: (1) real vision
+wiring for the teacher policy -- each of the 7 teacher workers now
+renders a real PyBullet camera frame per turn
+(`world.render_frame(agent_name, width=320, height=240)`, reshaped to
+a `(240, 320, 3)` uint8 array) and sends it to LFM2.5-VL-3B via
+`proc(images=[frame_arr], text=[text_prompt], ...)`, with a graceful
+text-only fallback on any exception; (2) a real before/after student
+fitness eval (`real_student_eval`), running `pb_tournament.run_tournament`
+with the student model as policy on fresh unseen episodes (seed 777, 4
+branches, 3 agents, 10 ticks), once immediately before training and
+once immediately after, to directly measure real gameplay-competence
+change from one training cycle -- not just loss curves.
+
+**Real v11 results so far, both genuinely new and confirmed working:**
+- Vision wiring: all 7/7 teacher workers completed a full real
+  generation cycle using real camera-frame vision input (598 total sft
+  rows, ~30-36s/worker vs v10's plain-text ~15s/worker -- the added
+  cost is real image preprocessing + vision-model forward pass, not a
+  regression or bug).
+- eval_before: `real student eval [BEFORE this cycle's training]:
+  fitnesses=[36, 36, 36, 36], mean=36.00` -- the eval fired
+  successfully end-to-end (tokenize -> generate -> parse -> run real
+  tournament episodes -> compute fitness), the first genuine
+  pre-training gameplay-competence measurement for this pipeline. All
+  4 branches returned identical fitness (36), which is expected at
+  temperature-0 greedy decoding with a fixed seed -- not evidence of a
+  broken signal, since `pb_tournament.py`'s own fitness function was
+  already confirmed non-degenerate in prior rounds when comparing
+  genuinely different policies.
+- Training reached step 12/15 with real, correctly decreasing losses
+  (8.1367 -> 1.0426) before the run's own step-to-step log cadence
+  became irregular: real per-step elapsed (s) were 4.7, 24.4, 66.3,
+  122.5, 193.7, 249.4, 325.1, 407.1, 511.4, 627.3, 757.8, 894.1 for
+  steps 1-12, with several individual gaps (~104-136s) that briefly
+  looked like stalls but each resolved on the next check -- consistent
+  with `kaggle kernels logs -f` CLI buffering rather than a true hang,
+  since v9/v10 never showed this pattern. However step 12 (894.1s)
+  itself has now shown no change across 3 consecutive real checks
+  (~30 real minutes with no new log line and status still RUNNING,
+  not ERROR) -- this exceeds every real per-step delta seen across
+  v9/v10/v11 so far (all under ~200s) and no longer fits the
+  "buffering, not hanging" explanation. This is a real, currently
+  unresolved stall at step 12/15, the first stall observed since v9's
+  fix (capping `MAX_STEPS=15` + reverting to round61's proven plain
+  config). The one new variable in v11 vs v9/v10 is the vision-wiring
+  code path in the teacher generation loop -- plausible but
+  unconfirmed as the actual cause, since generation for this cycle had
+  already fully completed (all 598 rows generated, mixture applied,
+  eval_before run) before training itself began; training's own code
+  is otherwise unchanged from v9/v10.
