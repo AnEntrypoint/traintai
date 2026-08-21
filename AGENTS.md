@@ -6982,3 +6982,31 @@ cheaper than either multi-cycle persistence or a further lr sweep,
 since those would still run on a hobbled train/eval mismatch. Multi-
 cycle persistence and lr tuning remain valid but lower-priority next
 steps once format alignment is confirmed as necessary or ruled out.
+
+## Round 60 v14: acted on v13's format-mismatch finding
+
+Two real fixes closing the exact gap v13 found, both isolated from lr
+(reverted to v12's original `1e-5` this round, so a nonzero delta here
+attributes cleanly to the format fix, not a magnitude change):
+
+1. `src/pb_tournament.py`'s `state_text` (the real per-turn training
+   prompt) changed from the bare `f"{name} hp=... gold=..."` to the
+   EXACT same wording as `student_policy_fn`'s eval prompt: `f"You are
+   {name} in a survival scenario. hp=... gold=.... Legal actions:
+   [...]. Respond with exactly one legal action word."`.
+2. `build_round60.py`'s training cell now applies
+   `student_tok.apply_chat_template(...)` to each row's prompt half
+   (split on the existing `\nassistant: ` separator) before
+   tokenizing, matching the eval's own `apply_chat_template(...,
+   add_generation_prompt=True)` call exactly. Rows without that
+   separator (a defensive fallback, not expected to trigger on current
+   sources) pass through unchanged rather than being silently dropped.
+
+Both training and eval now read the SAME real prompt text through the
+SAME real chat-template call -- the two input distributions v13 found
+diverging are now unified. Pushed as `heclgang/round60pipelined8chip`
+version 14; real result pending. A nonzero real fitness delta this
+round would confirm format mismatch was the true root cause across
+v11-v13; a still-zero delta would be a genuinely surprising result
+requiring a fresh hypothesis (e.g. multi-cycle persistence, or that 15
+steps is fundamentally too few regardless of format/magnitude).
