@@ -6596,3 +6596,26 @@ genuinely mixed conv+attention layer stack, confirmed via
 controls. This closes the investigation into round60's OWN code as a
 possible cause -- it was never the pipeline, generation, or multi-chip
 design that was broken.
+
+**User's real, correct observation**: since round61's growth RATIO was
+decelerating (4.1x -> 2.1x -> 2.0x -> 1.4x -> 0.8x -> 1.3x across steps
+1-7), not exploding unboundedly, a real plateau at a usable (if slow)
+steady rate is plausible -- rather than avoiding LFM2.5-350M entirely,
+just cap the real step count to whatever fits a reasonable real time
+budget, matching how this project's other real training runs have
+always worked (short, bounded cycles, not unbounded epochs).
+
+**v9 fix** (pushed as `heclgang/round60pipelined8chip` version 9): caps
+`n_steps` to a real `MAX_STEPS = 15` (down from the full 157 the row
+count would otherwise imply), and simplifies the optimizer setup back
+to round61's EXACT proven configuration -- plain `torch.optim.AdamW`,
+plain lazy execution, no eager-mode/`torch_xla.compile` wrapper (v8's
+eager-mode attempt was itself an untested variable that also stalled,
+so removing it reduces the real variable surface rather than adding
+more). Per-step progress now prints every step (not just every 20),
+matching round61's own logging discipline, so this real run gives
+direct evidence of whether the pipelined 8-chip context ALSO exhibits a
+real, decelerating-then-plateauing per-step cost (making short-epoch
+training in the full pipeline viable) or something categorically worse.
+`build-pipelined-8chip-tpu-kernel-3d-training` remains open pending v9's
+real result.
