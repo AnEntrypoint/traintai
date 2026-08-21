@@ -7169,3 +7169,42 @@ once the TPU slot frees (v17 running to completion first). This is the
 real, locally-verified fix -- the prior two attempts (v16's traceback
 discovery, v17's isinstance check) each closed one real gap but the
 type-check itself was the final remaining bug.
+
+## Round 60 v18: the fix worked -- the model finally generated real text -- and then a real new stall appeared
+
+**Real, confirmed success on the original bug**: `real student_policy_fn
+[BEFORE this cycle's training] generated #1: raw_text='trade'`,
+`generated #2: raw_text='attack'`, `generated #3: raw_text='attack'`.
+For the first time since v11 introduced this eval, the trained student
+model is genuinely being called and genuinely producing real text
+output. This confirms v18's `hasattr(enc, 'items')` fix is correct and
+closes the entire v11-v18 diagnostic chain on the original question
+(was the eval ever testing the real model -- no, until now, yes).
+
+**But a new real problem appeared immediately after**: the log has
+shown zero progress past `generated #3` for 30+ real minutes, with
+kernel status still RUNNING (not ERROR, not COMPLETE). Only the first
+3 real generated calls are logged by design (to avoid flooding),
+so calls #4 onward produce no log output until the full 240-call
+tournament eval finishes and prints its summary -- meaning this
+silence is EXPECTED up to a point, but 30+ minutes with zero forward
+progress on what should be 240 individual ~8-token generations is
+itself suspicious, especially given round60's own well-documented
+history (v4) of catastrophic XLA recompilation stalls from
+non-fixed-shape inputs. The real, likely mechanism: `student_policy_fn`
+calls `tok.apply_chat_template(messages, ..., return_tensors='pt')`
+fresh per call with NO fixed padding/truncation (unlike the training
+loop's own `padding='max_length', truncation=True, max_length=256`
+discipline) -- each of the 240 calls has a different real prompt
+length (agent name, hp, gold all vary), so PyTorch/XLA's lazy graph
+compilation plausibly recompiles a fresh graph on every single call,
+each recompilation itself potentially minutes long on this
+model/hardware (matching the exact real mechanism documented in v4's
+catastrophic stall, "dynamic per-batch padding forcing real XLA graph
+recompilation every step"). Not yet confirmed (the kernel is still
+running, no crash to read a traceback from) -- letting it run further
+before intervening, since it may still resolve, but this is the
+leading real hypothesis for a v19 fix (add fixed
+`padding='max_length', truncation=True, max_length=<N>` to the eval's
+own `apply_chat_template` call, matching training's proven discipline)
+if it does turn out to be a genuine stall.
