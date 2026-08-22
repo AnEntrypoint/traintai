@@ -7345,3 +7345,70 @@ whatever accumulates) is a real, stronger candidate fix but is a
 substantially larger change (subprocess IPC for tensors/weights across a
 TPU chip boundary) -- deliberately deferred as a follow-up, not attempted
 this round.
+
+## Round 60 v22 real result (Kaggle version 21): eval call-count cap WORKS for 2 cycles, then a NEW compounding failure hits cycle 3
+
+Real Kaggle log pulled after `kernels status` returned `ERROR`. Timeline:
+
+- Cycle 1: generation (203s->418.5s, 602 rows), `eval_before` **all 3 calls
+  completed cleanly** at 455.6s/492.4s/528.8s (steady ~35s/call, same as
+  the original healthy baseline) -- `fitnesses=[5], mean=5.00,
+  generated=3, fallback_exceptions=0`. Training: 15 real steps,
+  final_loss=0.82, completed cleanly. Cycle 1 summary printed at 1907.6s.
+- Cycle 2: generation (1907.6s->2123.4s, 598 rows). `eval_before` **all 3
+  calls again completed cleanly**, but markedly slower: 2973.1s/4287.1s/
+  5201.4s (deltas 1314s, 914.3s -- NOT monotonically growing this time,
+  unlike v21's doubling pattern, but still far slower than cycle 1's
+  ~35s/call). `fitnesses=[5], mean=5.00, generated=3,
+  fallback_exceptions=0`. Training completed cleanly, final_loss=0.52.
+  Cycle 2 summary printed at 10134.9s.
+- Cycle 3: generation (10134.9s->10342.6s, 591 rows + 29 mindcraft mixed
+  in). `eval_before` call #1 **never printed** -- total silence for
+  1773.8s (~29.6 real minutes), then `Kernel died while waiting for
+  execute reply` / `DeadKernelError` at 12116.4s-12117.4s. No exception
+  logged by `student_policy_fn`'s own try/except (which prints on the
+  first 3 real exceptions) -- the process itself died mid-call, same
+  silent-hang-then-death signature as every prior death, just now hitting
+  call #1 instead of call #3 or #4.
+
+**Real, decisive read**: the v22 call-count cap (3 calls/pass) is a
+genuine, confirmed improvement -- cycles 1 and 2 both got a complete,
+uncorrupted `eval_before` measurement for the first time ever in this
+diagnostic chain (previously, ANY real before/after cycle died before
+completing). But the underlying growth mechanism does not reset between
+cycles -- it compounds ACROSS cycles: cycle 1's calls were healthy-speed,
+cycle 2's were ~30-90x slower but still finished, cycle 3's first call
+never finished at all. Each additional real training cycle (15 backward
+passes) pushes the eval call cost curve further left, so a FIXED
+call-count cap that survived cycles 1-2 is not guaranteed to survive
+cycle N as N grows -- this is a real, structural limit of the
+mitigation, not a fluke.
+
+This confirms the mechanism is cumulative/monotonic across the WHOLE
+process lifetime, not per-training-cycle-local -- consistent with genuine
+unbounded XLA compilation-cache or TPU-memory growth that nothing in this
+codebase (mark_step/gc.collect/zero_grad, none of which are process
+restarts) can actually release. The only mitigations that have ever
+worked in this project's whole documented history (round61's MAX_STEPS
+cap, this round's 3-call eval cap) work by staying under an
+ever-shrinking survivable budget, not by fixing the leak.
+
+## Round 60 v23 (not yet built): real next lever is process-level isolation, not a smaller cap
+
+A smaller cap (e.g. 1-2 calls/pass) would only buy a few more cycles
+before hitting the same wall -- diminishing, not solved. The real fix
+this project's own evidence points to is running each `eval_before`/
+`eval_after` pass (or even each individual `.generate()` call) in a
+FRESH process/kernel restart, so whatever XLA/TPU state is accumulating
+gets genuinely released rather than merely paused between calls. This is
+the same "process-level isolation" lever already named and deferred in
+the v22 write-up above, now upgraded from "a stronger candidate" to "the
+only remaining real lever, given a fixed cap is now proven to only delay
+not prevent the failure." Concretely this likely means: save student
+weights to disk at the end of each cycle, and run the eval pass as a
+genuinely separate `subprocess.run(...)` invocation (or a Kaggle
+multi-kernel split) that loads the checkpoint fresh, evals, and exits --
+paying real re-load cost per cycle in exchange for a clean XLA runtime.
+Not yet designed or attempted -- flagged here as the real next step
+rather than silently re-trying a smaller-cap variant that this round's
+own evidence already shows would not hold indefinitely.
