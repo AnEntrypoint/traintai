@@ -7096,3 +7096,79 @@ model.generate) is found and fixed, confirmed via real live generation
 in v18, and the remaining open question (does a real nonzero fitness
 delta appear) is now purely a matter of TPU time, not further
 diagnosis.
+
+**Real v19 result: quota refreshed, kernel ran.** TPU quota confirmed
+refreshed (`kaggle quota`: 20.00h remaining) at 2026-08-22T06:58Z. v19
+pushed and ran successfully: real generation (599 sft rows, mindcraft
+mixture 29 rows added), real eval_before confirmed working with ZERO
+fallback exceptions (`fitnesses=[10, 10], mean=10.00`,
+`generated=12, fallback_exceptions=0`) -- the v18/v19 real-generation
+fix holds on a second independent run. Training in progress at time of
+this note (healthy, monotonically decreasing losses 6.5667 -> 1.2559
+through step 8/15).
+
+## Round 60 v20: real multi-cycle training loop + sanity gates + structured logging (maximize real TPU mileage per kernel push)
+
+Per the user's explicit direction ("we must optimize our setup to
+maximize the mileage we get from the tpu machine, better logging can
+also help us probably, perhaps conditional stops if certain concepts
+arent met so we know its working normally, we need training in volume
+to give it generalized knowledge and habits for this"), restructured
+`build_round60.py` around a real bounded multi-cycle loop instead of
+v9-v19's one-cycle-per-kernel-push shape:
+
+1. **Multi-cycle loop**: generation -> mindcraft mixture -> eval_before
+   -> train -> eval_after -> sanity gates -> structured per-cycle log
+   now runs inside `while True:`, bounded by real wall-clock
+   (`WALL_CLOCK_BUDGET_S = 21600` = 6hrs, checked at the TOP of every
+   cycle before any work starts, leaving ~3hrs real margin under
+   Kaggle's ~9hr TPU session ceiling). `student`/`student_tok`/
+   `teacher_workers` load ONCE before the loop; `student_opt =
+   torch.optim.AdamW(...)` is ALSO created once outside any per-cycle
+   function and passed into `run_training_cycle(sft_rows, opt)` by
+   reference every cycle -- real continued training with persisting
+   optimizer momentum state, not a fresh optimizer (and therefore
+   fresh Adam moment estimates) every cycle, which would have been
+   continued training in name only.
+2. **Real sanity gates**, checked every cycle, each printing a named
+   real reason and cleanly breaking (never a silent continue, never an
+   uncaught crash): zero real sft rows generated this cycle; non-finite
+   (NaN/Inf) loss; a real training exception; and -- directly closing
+   the exact class of gap the v11-v18 saga exposed -- the eval's own
+   `fallback_exceptions` count exceeding `MAX_FALLBACK_EXCEPTIONS=0`,
+   meaning the eval mechanism itself silently stopped calling the real
+   model. `real_student_eval.last_fallback_count` exposes this as a
+   real function attribute for the gate to read.
+3. **Structured per-cycle logging**: each cycle appends a real dict
+   (`cycle`, `wall_clock_s`, `rows_generated`, `final_loss`,
+   `eval_before`, `eval_after`, `delta`, `eval_fallback_exceptions`) to
+   `cycle_history`, printed as one real JSON line per cycle (scannable
+   trend across many cycles, not buried in per-step/per-eval verbose
+   output) plus a final run summary printing the full history and the
+   real mean delta across all cycles that produced one.
+4. **Eval-generation batching**: investigated via direct
+   `pb_tournament.py` inspection. Real finding: `run_one_episode`
+   applies each agent's action to the shared world object immediately
+   (before the next agent's `policy_fn` call, same tick) -- agent N's
+   decision can genuinely depend on agent N-1's already-applied action
+   this same tick. True within-tick batching across agents would
+   change real simulation semantics, not just optimize it -- ruled out.
+   A real, semantics-preserving alternative exists (interleaving
+   execution ACROSS the already-independent tournament branches via a
+   generator/coroutine boundary at the `policy_fn` yield point,
+   batching multiple branches' simultaneous decision-point prompts into
+   one `model.generate()` call), concretely spec'd but deliberately
+   deferred as its own focused follow-up task (`round60-eval-cross-
+   branch-batching-followup`) rather than a same-session drive-by
+   refactor to a proven, working simulation core while v19 was
+   live-validating the other three levers.
+
+Real verification: notebook regenerated and `ast.parse`-clean on every
+code cell (including the four `%%writefile`-embedded source modules);
+pushed as `heclgang/round60pipelined8chip` v19 carrying the SAME
+underlying eval/training code this restructuring wraps (v20's own
+first live TPU test is pending, to be pushed once v19's slot frees) --
+v19's real, live confirmation that generation/eval_before/training all
+execute correctly with the real fix intact directly de-risks v20's own
+first real run, since the loop body is the same proven code, just
+wrapped in real repetition/gating/logging.
