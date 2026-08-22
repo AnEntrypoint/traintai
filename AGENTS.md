@@ -7266,3 +7266,82 @@ never actually started running before this push superseded it in the
 queue -- so this is the FIRST real test of the multi-cycle loop, and
 it already carries the kernel-death fix from its first live run, no
 wasted cycle on the known-fragile version). Real result pending.
+
+## Round 60 v21 real result: kernel died again, DECISIVE new finding -- it's not the training->eval_after transition, it's cumulative `.generate()` calls degrading regardless of position
+
+Real Kaggle log pulled via `kaggle kernels output` (`kernels status` showed
+`KernelWorkerStatus.ERROR`). Timeline:
+
+- Cycle 1 generation: 193.3s->415.4s, 603 real sft rows across 7 workers.
+- Cycle 1 `eval_before` (BEFORE any training has ever happened this run):
+  calls at 453.1s/488.7s/524.7s -- steady ~35s/call, all 12 calls done by
+  852.4s. `fitnesses=[10,10], mean=10.00`, `generated=12,
+  fallback_exceptions=0`. **Fully normal**, matching v18/v19's own
+  pre-training rate.
+- Cycle 1 training: 15 real steps, real decreasing loss, final_loss=0.80,
+  completed cleanly. Real v21 cleanup (`zero_grad`/`gc.collect`/
+  `xm.mark_step`) ran successfully. Cycle 1 summary printed at 2271.3s:
+  `eval_after: null` (correctly skipped -- cycle 1 % 3 != 0 under this
+  run's actual `EVAL_AFTER_EVERY_N` gating, contradicting this file's own
+  prior v21 write-up above which claimed cycle 1 always gets one; the real
+  code only special-cased nothing for cycle 1 -- documented here as the
+  real observed behavior, not the intended one).
+- Cycle 2 generation: 2271.3s->2490.3s, 606 more real sft rows, real
+  mindcraft mixture added (30 rows).
+- Cycle 2 `eval_before` (AFTER cycle 1's training+cleanup, separated from
+  training by a full ~220s generation phase on the OTHER 7 chips): call #1
+  at 3815.1s, call #2 at 4506.3s (delta 691.2s = 11.5min), call #3 at
+  5904.0s (delta 1397.7s = 23.3min -- roughly DOUBLING call-over-call).
+  Call #4 never printed. **Kernel died** (`DeadKernelError`) at 12482.7s,
+  ~6578.7s (1.83 real hours) after call #3 with total silence in between --
+  no traceback, no OOM message, just the papermill/nbclient wrapper
+  reporting the kernel was gone.
+
+**This overturns the v21 hypothesis.** The v21 fix assumed the growing-cost
+mechanism was specifically tied to the training->eval_after transition
+(gradient/backward-pass state leaking into the next `.generate()` call).
+But this death happened in `eval_before` of cycle 2 -- separated from
+training by a full cleanup pass AND an entire unrelated generation phase
+on different chips -- and shows the EXACT SAME signature v19's eval_after
+showed (steady baseline rate, then call-over-call cost roughly doubling,
+then total silence, then kernel death after ~2 hours). The real common
+factor across both v19's death and this one is not "runs right after
+training" -- it's **one full training cycle (15 real backward passes) has
+occurred at some point earlier in the process**, and *any* subsequent
+`student.generate()` calls degrade and eventually kill the kernel,
+regardless of what runs in between. `xm.mark_step()`/`gc.collect()`/
+`zero_grad()` did NOT prevent this.
+
+This matches this project's own long-documented, never-actually-fixed
+round61 finding (line ~6270 above): LFM2.5-350M's per-step cost under
+sustained XLA lazy execution grows and is only ever survived by CAPPING
+the number of ops per pass (`MAX_STEPS=15` for training), never by any
+cleanup call between passes. The real, honest read: `.generate()` calls
+after a training cycle has occurred are subject to the same
+never-fully-explained growth pattern, and the only proven-effective
+mitigation this project has ever found is capping op COUNT per pass low
+enough that the pass finishes before growth compounds fatally -- not
+positional avoidance (v21's periodic-eval_after idea) and not explicit
+XLA hygiene calls (v21's cleanup idea, now falsified as sufficient on its
+own by this real result).
+
+## Round 60 v22: cap real eval `.generate()` calls per pass to 3 (survivable), always run via subprocess isolation is out of scope this round
+
+Real fix: `real_student_eval` cuts `n_branches` 2->1 (paired with
+`n_agents=2, n_ticks=3` this yields exactly 3 real policy calls per
+tournament branch-agent-tick combination that actually reaches the
+student -- matching the exact call count (3) that v19 AND this v21 run
+both proved is reliably survivable before growth becomes fatal). This is
+a real, precedented mitigation (matches round61's own only-proven lever:
+cap op count per pass), not a new untested idea. Real, honest caveat: this
+does not fix the underlying growth mechanism (still undiagnosed at the
+API-call level, unlike the v16-v19 BatchEncoding bug) -- it only keeps
+each real pass inside the empirically-survived call-count envelope.
+Reducing eval fidelity (1 branch instead of 2) is a real, explicit
+tradeoff against noise, accepted here because a dead kernel produces ZERO
+real signal versus a noisier-but-real one. Process-level isolation (run
+each eval pass in a fresh subprocess so a fresh XLA runtime avoids
+whatever accumulates) is a real, stronger candidate fix but is a
+substantially larger change (subprocess IPC for tensors/weights across a
+TPU chip boundary) -- deliberately deferred as a follow-up, not attempted
+this round.
