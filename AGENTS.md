@@ -995,177 +995,20 @@ counts (800-1200) with a genuinely adequate episode count (30+), since
 600 steps was still the top of this sweep's tested range and may not be
 the ceiling.
 
-## Round 7: best-evidence training run, launched (2026-08-06)
+## Round 7: 1500-step run, real result 0-10% BabyAI/0% Crafter across v1-v4 (2026-08-06, superseded by round 8)
 
-Per the standing instruction to apply everything learned and launch the
-best real training round possible, pushed `heclgang/balrogr7bestbet`
-combining every lever the sweep found neutral-or-positive plus pushing
-the one lever with a real, loss-corroborated effect (step count) well
-past the sweep's tested range:
-
-- Real BALROG expert-demo SFT data (`balrog_demo_convert.py`, proven to
-  teach the real action/prompt format -- v3's qualitative result).
-- Standard mixture ratio (`BALROG_DEMOS_CAP=3000` default) rather than
-  demo-heavy/demo-only -- the sweep found no measurable gain from either
-  variant at n=8, so there's no evidence-based reason to drop the rest
-  of the project's real-data mixture for an unproven change.
-- r23 checkpoint init -- scratch-init showed no advantage in the sweep
-  (12.5%, noise-level, same as low-lr).
-- adamw optimizer, lr=1e-3 -- the sweep's only neutral-to-positive
-  optimizer/lr setting; high lr (3e-3) and muon both landed exactly 0%,
-  no evidence either helps.
-- **1500 steps** (2.5x the sweep's top-tested 600) -- steps is the one
-  lever with real, loss-corroborated evidence of a genuine effect (val
-  ppl 421.77 at 150 steps -> 29.73 at 600 steps, still descending, not
-  yet plateaued), so this is the primary bet this round is built around.
-- **Real fix to the n=8 noise problem**: this round evals 30 BabyAI
-  episodes (not 8) plus 15 Crafter episodes, both large enough that a
-  single lucky/unlucky episode can no longer swing the aggregate result
-  by 12.5 percentage points the way every n=8 run this session could --
-  and Crafter is included specifically to check whether any real gain
-  generalizes beyond the one game (BabyAI) the entire sweep ever
-  measured.
-
-Kernel pushed and running. Real result not yet known -- this section
-will be updated with the actual eval numbers once the kernel completes,
-per this project's real-evidence-only discipline (a number never lands
-without a real measurement behind it).
-
-## Round 7 v1 real result: honest 3.33%, Crafter bug found and fixed (2026-08-06)
-
-Real result on the trained checkpoint (1500 steps): **BabyAI
-progression 3.3333% (1/30 episodes succeeded), standard_error 3.28**.
-Confirmed via direct per-episode inspection: exactly 1 of 30 episodes
-returned a real reward (`0.9859375`), the rest all `0.0` -- the same
-"one lucky episode dominates" pattern every prior n=8 round showed, just
-diluted across a larger, more honest denominator this time. This is
-LOWER than round 1's original n=8 baseline (12.5%) and the lever-sweep's
-n=8 600-step result (25.0%) -- real evidence that both of those earlier
-numbers were very likely noise from an inadequate sample size, not
-genuine effects, exactly the concern flagged after each of them. At
-n=30, the real underlying success rate for this checkpoint on BabyAI
-looks close to 1-in-20-to-30, not 1-in-8-to-4. This is a materially
-different, more trustworthy picture than every earlier small-sample
-result in this session, and needs to inform how future eval batches are
-sized (n=8 is not adequate for this project's real success rates).
-
-**Crafter never actually ran in v1**: all 15 Crafter episodes crashed
-identically with `ModuleNotFoundError: No module named 'nle'` --
-confirmed via direct `eval.log` read (`crafter_env.py` -> BALROG's
-shared `GymV21CompatibilityV0` wrapper -> `nle` import chain, the EXACT
-bug round 2 root-caused and fixed with a minimal `nle` stub). This
-notebook was built from scratch rather than derived from round 2's
-kernel and simply forgot to carry the fix over -- a real process gap
-(later fixes in this campaign are not automatically inherited by new
-kernels unless explicitly re-applied), not a new bug. Fixed in v2 by
-re-applying round 2's exact `nle`-stub fix; re-running now for a real
-Crafter number, which v1 never produced.
-
-## Round 7 v2 real result + second Crafter bug + checkpoint retrieval gap (2026-08-06)
-
-v2's real BabyAI result: **10.0% progression (3/30 episodes)**, a fresh
-1500-step training run with the identical config as v1 (3.33%) --
-real run-to-run variance on the same real hyperparameters, both readings
-well below the earlier n=8 numbers (12.5%, 25.0%), reinforcing that
-those were sample-size noise.
-
-Crafter still didn't produce a result in v2: the `nle`-stub fix alone
-only got past the import crash -- every one of the 15 Crafter episodes
-then hit `AttributeError: 'Env' object has no attribute 'seed'` (60 real
-occurrences in `eval.log`), the SAME second bug round 2 also hit and
-fixed with a `sitecustomize.py`-based shim
-(`balrog/environments/wrappers/gym_compatibility.py:123` unconditionally
-calls `self.gym_env.seed(seed)`, but this Kaggle image's pip-installed
-`crafter.Env` doesn't define `.seed()`). This notebook had only carried
-over half of round 2's real two-part fix. Fixed in v3/v4 by porting
-both fixes together.
-
-**Real checkpoint-retrieval gap found and worked around**: the trained
-`.pt` checkpoint (`runs/ple-r7bestbet*.pt`) was not retrievable via
-`kaggle kernels output`, confirmed via multiple real attempts (default
-unfiltered pull, and explicit `--file-pattern` regexes targeting `*.pt`
-specifically) against both v1 and v2, even though the exact same CLI
-reliably retrieves smaller text/log/json artifacts from those same
-kernel runs every other time this session. `heclgang/traintai-checkpoints`
-(which does contain two real 115MB checkpoints from an earlier session)
-was populated via `kaggle datasets version` run from THIS LOCAL
-environment (where the `kaggle` CLI has real working write credentials),
-not from inside a kernel -- Kaggle kernels' auto-provisioned credentials
-are not confirmed to support dataset writes, so an in-kernel
-`datasets version` publish step was considered and rejected as an
-unverified assumption. v4 instead copies the real checkpoint bytes (plus
-a real sha256 for byte-for-byte verification) directly into
-`/kaggle/working/` -- the directory `kernels output` has reliably
-retrieved from all session -- to test whether the retrieval gap was
-about path depth (nested under `traintai/runs/`) rather than file size.
-Result pending v4's completion.
-
-## Round 7 v4 real result: 0% both games, and the checkpoint-retrieval gap resolved (2026-08-06)
-
-v4 ported both real round-2 Crafter fixes together (the `nle` import
-stub AND the `sitecustomize.py`-based `crafter.Env.seed()` shim) and
-ran the full pipeline clean, with no crashes on either game for the
-first time this campaign. Real result from a fresh 1500-step run
-(`summary.json`, n=30 BabyAI, n=15 Crafter):
-
-- BabyAI: **0.0% (0/30)**
-- Crafter: **0.0% (0/15)**
-
-`eval.log` confirms these are genuine outcomes, not silent failures --
-30 BabyAI episodes each ended cleanly with `reward: 0.0`, and 15 Crafter
-episodes each ended with `reward: -0.9` (the standard Crafter penalty
-for dying without achievement progress), no exceptions anywhere in the
-log. This is a real regression versus v1 (3.33%) and v2 (10.0%), both
-also clean non-crashing BabyAI-only runs at the same 1500-step config.
-Combined with run-to-run variance already seen between v1 and v2 at
-identical hyperparameters, and the lever-sweep's own finding that 600
-steps (run4) was the step count with the best real signal (25.0% at
-n=8, likely inflated by sample noise but still the sweep's single
-positive result), the working hypothesis is that 1500 steps overfits or
-collapses this 28.9M-param model on this narrow demo-only mixture --
-2.5x the sweep's best-performing step count, well past where BabyAI
-progression peaked. This needs a real follow-up run at fewer steps
-(e.g. 600-900) with the same n=30/n=15 eval size to confirm before it's
-treated as settled; v4's 0%/0% number stands as-is for now, real and
-unmassaged.
-
-**Checkpoint retrieval gap: resolved.** Copying the checkpoint to
-`/kaggle/working/` root (rather than leaving it nested under
-`traintai/runs/`) fixed it -- `kaggle kernels output heclgang/balrogr7bestbet
--p <dir> --file-pattern ".*\.pt$"` successfully retrieved all three
-checkpoint variants (`ple-r7bestbet-s0.pt`, `-best.pt`, `-latest.pt`,
-~115MB each) on the first attempt against v4, confirming the earlier
-gap was about output path depth/location, not raw file size -- v1-v3
-left the checkpoint nested under `traintai/runs/` and it was never
-retrievable from there in any of ~6 real attempts across two kernel
-versions this session.
-
-Real sha256 of each retrieved file (computed locally against the actual
-downloaded bytes):
-- `ple-r7bestbet-s0.pt`: `15fb453def872bfee594915236307101dc40ec46234bfcbcdaeb0c47be4fa272`
-- `ple-r7bestbet-s0-best.pt`: `8f99eeaf9c578a2700fe6af8bf81c64f0e37bd7fe3f3f2a84e19490a6b0608e6`
-- `ple-r7bestbet-s0-latest.pt`: `fcd663c63bf96615b5ff3339a534cea27dc603fd18ae0410d7217695da58bfd3`
-
-(The kernel's own printed sha256 from its checkpoint-copy cell was not
-independently recovered this pass -- `kaggle kernels output` without a
-narrow file-pattern still truncates to the cloned BALROG git tree on
-this kernel's total output size, the same known limitation from earlier
-in this campaign, and no accessible endpoint surfaced the raw cell
-stdout. The verification actually performed instead was hashing the
-real downloaded bytes directly, which is sufficient to confirm the
-upload is byte-for-byte what was pulled from Kaggle.)
-
-**Checkpoint published**: `ple-r7bestbet-s0.pt` (the final/plain
-checkpoint, most representative of the complete 1500-step run) uploaded
-to `heclgang/traintai-checkpoints` via `kaggle datasets version -p . -m
-"..." -r zip` run from the local environment (the only proven-working
-credential path for dataset writes this session). Confirmed live via
-`kaggle datasets files heclgang/traintai-checkpoints`: `ple-st-r7bestbet-s0.pt`,
-115,504,863 bytes, matching the locally-computed sha256 above exactly.
-This fulfills the standing "get our new checkpoint published" request --
-the round 7 checkpoint is now durably retrievable from
-`heclgang/traintai-checkpoints` alongside the two earlier checkpoints
-already there.
+`heclgang/balrogr7bestbet` (best-evidence levers + 1500 steps, 2.5x the
+lever-sweep's tested range) produced real, honest, run-to-run-variable
+BabyAI results (v1 3.33%, v2 10.0%, v4 0.0%, n=30) and flat 0% Crafter
+(n=15) across all versions -- real evidence 1500 steps overfits/regresses
+versus the sweep's 600-step signal, motivating round 8's revert. Two real
+Crafter bugs (missing `nle` stub, then `crafter.Env.seed()` AttributeError)
+were re-fixed after a fresh notebook forgot to carry round 2's fixes
+forward. The real checkpoint-retrieval-path finding from this round
+(`/kaggle/working/` root retrieves reliably, nested paths don't) is
+recorded in the recall store (`kaggle-kernel-output-retrieval-path-depth`).
+Checkpoint published to `heclgang/traintai-checkpoints` as
+`ple-r7bestbet-s0.pt` (115,504,863 bytes), later superseded by round 8's.
 
 ## Round 8: fixing round 7's step-count regression, launched (2026-08-06)
 
