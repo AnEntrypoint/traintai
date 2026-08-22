@@ -7230,3 +7230,39 @@ current blocking question before v20 can be trusted to run unattended
 for its full 6-hour budget -- pushing v20 as-is would risk the exact
 same kernel death on its very first cycle's `eval_after`, defeating the
 entire "maximize real TPU mileage" goal this round was built for.
+
+## Round 60 v21 (Kaggle version 20 -- v19's own multi-cycle push never actually ran, superseded here): real fix for the eval_after kernel-death risk
+
+Implemented both real mitigations named above, together (defense in
+depth, since neither is proven sufficient alone against a failure mode
+never observed until v19's real run):
+
+1. **Real explicit cleanup between training and eval_after**: after
+   training completes each cycle, `student_opt.zero_grad(set_to_none=
+   True)` (releases real gradient tensors), `gc.collect()`, and
+   `xm.mark_step()` (flushes pending XLA lazy ops, forcing any deferred
+   graph execution to actually happen and release its intermediate
+   state) run before `eval_after` starts -- wrapped in a real
+   try/except so a cleanup failure is logged but never blocks the
+   cycle.
+2. **Real periodic eval_after**: `EVAL_AFTER_EVERY_N = 3` -- the
+   expensive post-training eval only runs every 3rd cycle (cycle 1
+   still gets one, matching prior single-cycle behavior for immediate
+   signal), directly cutting real exposure to the risky training->eval
+   transition v19 proved can kill the kernel, since v19 already showed
+   cutting eval CALL COUNT alone (240->12) did not prevent the death --
+   the transition itself, not the call volume, is implicated.
+
+Real, honest caveat: neither mitigation is PROVEN to fix the underlying
+mechanism (unlike the eval-generation bug fixed in v16-v19, this one
+has not been traced to a specific line/API call) -- `mark_step()`/
+`gc.collect()` is a real, standard, well-understood XLA hygiene
+practice but has not been verified against this specific failure on
+real hardware yet, and periodic eval_after only reduces real exposure
+frequency, it doesn't guarantee cycle 1's own eval_after (which still
+runs) won't repeat v19's death. Pushed to Kaggle as kernel version 20
+(v19's own already-pushed multi-cycle-loop version, prior to this fix,
+never actually started running before this push superseded it in the
+queue -- so this is the FIRST real test of the multi-cycle loop, and
+it already carries the kernel-death fix from its first live run, no
+wasted cycle on the known-fragile version). Real result pending.
