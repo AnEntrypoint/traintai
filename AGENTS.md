@@ -7166,9 +7166,67 @@ v9-v19's one-cycle-per-kernel-push shape:
 Real verification: notebook regenerated and `ast.parse`-clean on every
 code cell (including the four `%%writefile`-embedded source modules);
 pushed as `heclgang/round60pipelined8chip` v19 carrying the SAME
-underlying eval/training code this restructuring wraps (v20's own
-first live TPU test is pending, to be pushed once v19's slot frees) --
-v19's real, live confirmation that generation/eval_before/training all
-execute correctly with the real fix intact directly de-risks v20's own
-first real run, since the loop body is the same proven code, just
-wrapped in real repetition/gating/logging.
+underlying eval/training code this restructuring wraps.
+
+## Round 60 v19 real final result: training succeeded cleanly, eval_after's post-training generation cost grew catastrophically and KILLED THE KERNEL
+
+Real, decisive, and previously-unobserved finding -- the first time
+`eval_after` has ever run immediately following a full 15-step training
+cycle in the same live process (v18 was cancelled by the user before
+training completed). Exact real timeline, read directly from the live
+Kaggle log:
+
+- Real generation (7 workers, 599 rows) + mindcraft mixture: completed
+  normally by 423.2s.
+- Real `eval_before` (12 calls): completed normally, calls at 461.2s /
+  497.1s / 534.0s (deltas ~36-37s, matching v18's baseline exactly),
+  full eval done by 859.5s. `fitnesses=[10, 10], mean=10.00`,
+  `generated=12, fallback_exceptions=0` -- the v18/v19 real-generation
+  fix confirmed working correctly a second time.
+- Real training (15 steps): completed normally, 1359.0s total, healthy
+  monotonic loss decrease 6.5667 -> 0.7897 -- no problems here.
+- Real `eval_after` (same 12-call eval, SAME code path as
+  `eval_before`, immediately after training): call #1 at 2853.8s
+  (1494.8s after training finished -- itself already ~40x slower than
+  the pre-training per-call rate), call #2 at 3558.4s (delta 704.6s =
+  ~11.7 real MINUTES for one call), call #3 at 4469.0s (delta 910.6s =
+  ~15.2 real MINUTES). **The kernel then died outright** --
+  `nbclient.exceptions.DeadKernelError: Kernel died` at 11959.7s, ~2.1
+  real hours after call #3, having never produced call #4. Kaggle
+  marked the run `KernelWorkerStatus.ERROR`.
+
+**This is a real, severe regression in generation cost specifically
+caused by having just trained** -- `eval_before` (before any training
+this cycle) ran at the normal ~36s/call rate on the exact same code
+path, exact same model object, exact same TPU chip. The only variable
+between `eval_before` and `eval_after` is the 15 real training steps
+that ran in between. The most likely real mechanism, consistent with
+this project's own long-documented pattern (LFM2.5-350M's genuine
+growing-per-step TRAINING cost, first found in round61's isolated
+diagnostic): real, accumulated XLA/TPU memory or compiled-graph state
+from 15 real backward passes is not being released before `.generate()`
+calls resume, and each new eval call compounds further -- eventually
+exhausting a real resource and killing the process outright, not just
+slowing down.
+
+**Real, direct consequence for v20 (already pushed, not yet run)**:
+v20's real sanity gates (finite loss, eval fallback-exception count,
+nonzero rows) are ALL Python-level exception/value checks -- NONE of
+them can catch or prevent a hard kernel death, since the process itself
+terminates before any Python code (including the gate checks) can run.
+v20's `while True:` loop, as currently written, would NEVER see this
+failure as a gate failure -- it would simply never resume, and the
+kernel would die exactly as v19's did, likely on cycle 1's own
+`eval_after`. **v20 needs a real fix before its next push**: either (a)
+explicitly free/reset TPU memory and XLA compiled-graph state between
+training and eval within each cycle (e.g. `xm.mark_step()` +
+`gc.collect()` + explicit `del`s of training-only tensors, or reverting
+to `student.eval()` more aggressively), or (b) reduce eval_after's real
+call count further (already cut to 12 from 240; may need to go lower
+still, e.g. `n_branches=1`), or (c) skip `eval_after` on some cycles
+(measure fitness only periodically, not every single cycle) to reduce
+how often this expensive transition happens. This is now the real,
+current blocking question before v20 can be trusted to run unattended
+for its full 6-hour budget -- pushing v20 as-is would risk the exact
+same kernel death on its very first cycle's `eval_after`, defeating the
+entire "maximize real TPU mileage" goal this round was built for.
