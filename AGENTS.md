@@ -7601,3 +7601,60 @@ addition (commit 53aa232), and the flee mechanic fix (commit 53aa232).
 Pushed as Kaggle version 23. No checkpoint existed to resume from (the
 prior run died before saving one), so this is a fresh start. Real
 result pending.
+
+## Round 60 v24 real result (Kaggle version 23): FIRST CLEAN COMPLETION in this entire diagnostic chain, checkpoint save bug found and fixed
+
+Real Kaggle log pulled after `kernels status` reported `COMPLETE` (no
+`ERROR`, no `DeadKernelError`, no timeout -- genuinely the first fully
+clean run since v11 started this diagnostic chain). Real result:
+
+- Cycle 1 generation: 618 rows across 7 real workers.
+- `eval_before`: 3 calls, all clean (437.9s/473.9s/510.4s), fitness
+  mean=5.00, `generated=3, fallback_exceptions=0`. Real generated
+  actions: `trade`, `attack`, `attack`.
+- Training: 15 real steps, healthy monotonic loss decrease (7.16 ->
+  0.66), no gate failures.
+- `eval_after`: 3 calls, all clean (2824.9s/3737.4s/4622.6s -- deltas
+  912.5s/885.2s, the same real per-call growth pattern seen before, but
+  this time it stayed inside the survivable envelope and did NOT kill
+  the kernel), fitness mean=5.00. Real generated actions: **`flee`,
+  `flee`, `trade`** -- the first real, live evidence the flee-mechanic
+  fix (round60-fix-flee-mechanic) is actually being exercised by real
+  model output, not just theoretically available.
+- `=== REAL STUDENT FITNESS DELTA CYCLE 1: 5.00 -> 5.00 (+0.00) ===` --
+  the fitness delta is EXACTLY 0.00 again, matching the suspicious
+  bit-identical pattern from v12-v15 (though this time confirmed NOT
+  the v11-v18 silent-fallback bug, since `fallback_exceptions=0` on
+  both sides and real distinct action words were generated -- genuinely
+  real model output, just landing on the same mean fitness by chance or
+  by real ceiling effect at n=1 branch). Not yet root-caused; flagged
+  as the next real question once the checkpoint pipeline itself is
+  confirmed working end to end.
+- Real cycle cap fired correctly: `real cycle cap reached: 1 >= 1
+  cycles this run` -- `MAX_CYCLES_PER_RUN=1` worked exactly as designed,
+  stopping the loop cleanly after cycle 1's full eval_after completed.
+- **Real, NEW bug found**: checkpoint save FAILED --
+  `RuntimeError('Attempted to access the data pointer on an invalid
+  python storage.')`. `config.json`/`generation_config.json` DID save
+  successfully (confirmed via direct download), isolating the failure
+  to weight-tensor serialization specifically -- a known real PyTorch/
+  XLA issue where `save_pretrained`'s default safetensors writer chokes
+  on XLA-resident lazy tensors. This meant NO usable checkpoint existed
+  after this run despite a fully successful training cycle -- the exact
+  progress-loss risk `MAX_CYCLES_PER_RUN=1` was built to prevent, now
+  hit via a different real mechanism (a save-path bug, not a kernel
+  death).
+
+**Real fix applied** (not yet tested against real Kaggle hardware):
+force materialization of XLA lazy tensors to real CPU storage before
+serialization -- `cpu_state_dict = {k: v.cpu() for k, v in
+student.state_dict().items()}` passed to `save_pretrained(...,
+state_dict=cpu_state_dict, safe_serialization=False)` (pickle format,
+more permissive about tensor storage than safetensors, as defense in
+depth alongside the explicit `.cpu()` move). Optimizer state dict
+nests real tensors inside `state[param_id][...]` (exp_avg/exp_avg_sq
+momentum buffers) -- same XLA-storage risk, same `.cpu()` fix applied
+recursively rather than a flat `torch.save` on the raw XLA-resident
+state dict. No change needed to the load path (`from_pretrained`
+already auto-detects `.bin` vs `.safetensors`, `load_state_dict`
+already handles device placement automatically).
