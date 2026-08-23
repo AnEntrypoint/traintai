@@ -7418,3 +7418,64 @@ restart**. Redesigned v23 around that:
 Pushed as Kaggle version 22. Real result pending -- this is the first
 live test of the kernel-restart-based isolation design; the relaunch
 script itself has not yet been run against real Kaggle infrastructure.
+
+Launched `experiments/round60_relaunch.sh` in the background (PID
+51538) after the v23 push started running -- it polls the already-
+in-flight run rather than pushing a competing version (the script's
+own initial-push step was skipped for this launch, since a fresh push
+against an actively-running kernel could plausibly cancel real in-
+progress training; this was never confirmed either way, and the
+conservative choice was made instead of guessing against real TPU
+work in flight).
+
+## Round 60: two real training-quality levers, found while pursuing "make it as smart as possible"
+
+Per the standing `/goal` directive, investigated whether the training
+signal itself (not just the mechanism that delivers it) was leaving
+real capability on the table. Two concrete gaps found by direct code
+read, both real and orthogonal to the eval-infrastructure work above:
+
+**1. Zero goal/objective framing in every prompt.** `teacher_policy_fn`,
+`student_policy_fn` (eval), and `pb_tournament.py`'s own training-row
+`state_text` all read `"You are {name} in a survival scenario. hp=...
+gold=.... Legal actions: [...]. Respond with exactly one legal action
+word."` -- state and legality, but no notion of what a GOOD outcome is.
+The teacher generating demonstrations had no explicit signal for what
+"smart" play means beyond legality; the student was being trained to
+imitate whatever the teacher guessed under that ambiguity. Fixed by
+adding one sentence, identical byte-for-byte across all three sites
+(verified via direct grep after editing, since this project's own v14
+lesson is that train/eval prompt mismatch silently breaks measurement):
+`"Survive, avoid fights you cannot win, flee real danger, and trade
+profitably when you can."` -- derived from `pb_tournament.py`'s own
+real, already-measured fitness definition (`clean_actions + 2*survivors
+- counter_actions`, plus an `outcome_good` hp-preservation check), not
+an invented standard.
+
+**2. `flee` was legal but mechanically inert.** Direct read of
+`run_one_episode`'s action-handling if/elif chain found handlers for
+`move_toward`/`attack`/`trade` but NONE for `flee` -- it never counted
+as an illegal (counter) action, but had zero effect on world state,
+mechanically identical to `wait` despite the name implying active
+escape. This directly undermines both the fitness signal (an agent
+"fleeing" a losing fight got no real survival benefit from that choice)
+and the new goal-framing sentence above (which would otherwise tell the
+model flee provides escape it doesn't). Root cause: `PBWorld.move_toward`
+only accepts another agent's name as a target, no coordinate/away-facing
+primitive existed. Fixed with a new `PBWorld.move_away_from(name,
+threat_name, speed)` (`src/pb_world.py`) -- exact mirror of
+`move_toward`'s real logic (same position reads, same `math.hypot`
+distance, same `p.resetBaseVelocity` call) with the unit vector negated,
+not a new capability class. `pb_tournament.py`'s new `elif action ==
+"flee"` branch calls the existing `resolve_aggro` (already used by the
+attack branch) to find the nearest real threat and moves away from it;
+no aggroed threat is a real, intentional no-op (nothing to flee from).
+
+Both changes verified via `ast.parse` (`pb_world.py`, `pb_tournament.py`,
+and the regenerated notebook's every code cell -- 0 errors, 23 cells).
+NOT yet pushed to Kaggle: the v23 kernel was already running when these
+changes landed, and manually pushing against an in-flight run risks
+cancelling real, in-progress training work (unconfirmed Kaggle behavior,
+treated conservatively -- see above). These changes will be picked up
+automatically by `round60_relaunch.sh`'s own next push once the current
+run reaches a terminal state naturally.

@@ -13,3 +13,4 @@ data/npc/balrog_demos.jsonl
 data/npc/balrog_direction_drill.jsonl
 data/npc/mindcraft_raw.json
 *.stackdump
+experiments/relaunch_chain.log

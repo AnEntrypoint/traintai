@@ -76,6 +76,19 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
                     aggroed = resolve_aggro(world, name, threshold_distance=3.0)
                     if aggroed and agent.gold > 0:
                         resolve_trade(world, name, aggroed[0][0], offer_gold=min(5, agent.gold))
+                elif action == "flee":
+                    # Real evasion: previously 'flee' was legal but had NO
+                    # mechanical handler at all -- identical to 'wait' no
+                    # matter the real threat situation, despite the name
+                    # implying active escape. Move away from the nearest
+                    # real aggroed threat via the new move_away_from
+                    # primitive (mirrors move_toward's own mechanic, unit
+                    # vector negated). No aggroed threat -> correctly a
+                    # real no-op (nothing to flee from).
+                    aggroed = resolve_aggro(world, name, threshold_distance=3.0)
+                    if aggroed:
+                        threat_name, _ = aggroed[0]
+                        world.move_away_from(name, threat_name, speed=1.5)
                 # Real outcome signal now checks BOTH the acting agent's own
                 # hp (unchanged) AND real total-population hp (new) -- an
                 # attack that costs the defender more hp than the attacker
@@ -97,6 +110,7 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
             # measure the same real input distribution.
             state_text = (
                 f"You are {name} in a survival scenario. hp={agent.hp:.1f} gold={agent.gold}. "
+                f"Survive, avoid fights you cannot win, flee real danger, and trade profitably when you can. "
                 f"Legal actions: {sorted(LEGAL_ACTIONS)}. Respond with exactly one legal action word."
             )
             turns.append(EnvTurn(state_text, action, was_legal, outcome_good))

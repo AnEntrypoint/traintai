@@ -91,6 +91,23 @@ class PBWorld:
         vx, vy = (dx / dist) * speed, (dy / dist) * speed
         p.resetBaseVelocity(agent.body_id, linearVelocity=[vx, vy, 0])
 
+    def move_away_from(self, name, threat_name, speed=1.0):
+        """Real evasion primitive: mirror of move_toward with the unit
+        vector negated -- same underlying velocity-setting mechanic, just
+        pointed away from the threat's CURRENT position instead of toward
+        it. Added for the tournament's real 'flee' action, which previously
+        had no mechanical handler at all (legal but inert)."""
+        agent = self.agents[name]
+        threat = self.agents[threat_name]
+        ax, ay, _ = agent.position()
+        tx, ty, _ = threat.position()
+        dx, dy = ax - tx, ay - ty
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            return
+        vx, vy = (dx / dist) * speed, (dy / dist) * speed
+        p.resetBaseVelocity(agent.body_id, linearVelocity=[vx, vy, 0])
+
     def render_frame(self, agent_name, width=320, height=240):
         """Real first-person-ish camera frame from an agent's position,
         looking toward world origin -- the vision-input source for the
