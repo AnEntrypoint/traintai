@@ -7573,3 +7573,31 @@ cycle) given cycle 2's training alone nearly killed the kernel without
 eval_after ever running. Not yet changed -- flagged as the real next
 lever, to be decided with real per-run TPU-hour cost in mind (more
 relaunches = more real per-run overhead from teacher/student reload).
+
+## Round 60 v24: MAX_CYCLES_PER_RUN=1, combined with goal-framing + flee fixes, pushed as Kaggle version 23
+
+Acted on the real reassessment above: `MAX_CYCLES_PER_RUN` dropped
+2->1 in `build_round60.py`. Real, direct consequence: no checkpoint
+file existed after v23's real death (confirmed -- `kaggle kernels
+output` on the errored run returned no `config.json`/`cycle_history.json`
+/`optimizer.pt`, since the save code only runs after the loop exits,
+and the loop never reached that point before dying mid-cycle-2). All of
+cycle 1's real training progress from that run was lost. With
+`MAX_CYCLES_PER_RUN=1`, a checkpoint saves immediately after cycle 1
+(the cycle that was consistently healthy across this run's entire real
+log), before cycle 2's danger zone is ever entered -- directly closing
+the gap that just cost a real ~3.3-hour run's training progress.
+
+`run_eval_after_this_cycle = (cycles_this_run == MAX_CYCLES_PER_RUN)`
+now correctly fires eval_after on every single cycle (cycle 1 is always
+the last cycle of its own run) -- desirable given this run's own
+evidence that cycle 1's eval_before/training were both consistently
+healthy; no code change needed there, the existing condition composes
+correctly with the new cap value.
+
+This is the FIRST real push carrying all three of this round's fixes
+together: MAX_CYCLES_PER_RUN=1 (this section), the goal-framing prompt
+addition (commit 53aa232), and the flee mechanic fix (commit 53aa232).
+Pushed as Kaggle version 23. No checkpoint existed to resume from (the
+prior run died before saving one), so this is a fresh start. Real
+result pending.
