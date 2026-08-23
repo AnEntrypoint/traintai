@@ -193,75 +193,23 @@ Anti-patterns from that run, never to be repeated here:
   gap; likely needs sim-generated multi-sentence gold chains, the same
   shape of lever that fixed grounding (object_ungrounded 15% -> 3%).
 
-## Round 17 result
+## Round 17-22 (BALROG-era action-reward arc, superseded by LFM2.5/round60)
 
-Action reward v1: exact-match +1.0 / miss -1.0 / unwarranted -0.5 taught
-near-total abstention (the safe local optimum under K=8 sampling) and
-cost 8pp forge pass. Ship stays r16 (74%). This is the second recorded
-instance of reward-shaping overshoot (first: template collapse era) --
-shape rewards against the measured safe-optimum, not the ideal one.
+Drained to memory (2026-08-23): reward-shaping on action-accuracy was
+tried 3 distinct ways across rounds 17-22 and confirmed a dead lever
+each time (abstention overshoot, sampler starvation, gate-induced
+garbage) -- r16 (74% forge) stayed ship the whole arc. Full detail:
+recall "round 17-22 action reward arc BALROG".
 
-## Rounds 18-22 results (action-reward arc, all non-ship; r16 stays)
+## Sibling-clone audit + world expansion + evolutionary-sim adoption (2026-08-03, BALROG-era, superseded by LFM2.5/round60)
 
-- r18: standalone GRPO probe, never a round; sim_eval actions 1%,
-  GOTO/DEAL/BUY 0% -- deepest abstention collapse. Measured and rejected.
-- r19: first full round through round.py with v2 partial-credit reward +
-  refreshed mixture (PIPPA 1457 real rows in bins, forge capped 2500, new
-  sim data). SFT top-up flat (val 2.3702 init -> 2.3756; best=step0, and
-  round.py's GRPO now consumes -best.pt when present). Forge 74% held;
-  sim none-acc 71%->88% but exact GOTO/DEAL 0% -- sampler starvation
-  measured (pass-zone cutoff excludes oracle prompts).
-- r20: + oracle sampling floor. Actions 0% -- additive shaping leaves
-  abstention (3.2) above sloppy attempts (2.4); floor amplified it.
-- r21: + v4 abstain-gate (flat -1.0 early return). Actions 96%, none-acc
-  100%, but 283/284 malformed, format 4%. Continuation: r22 for syntax.
-- r22: +300 steps from r21. Flat: invalid 272/276, format 9%, exact
-  GOTO/DEAL 0%. Syntax never entered K=8 groups, so no gradient; the
-  reward-shaping arc on actions stops here (dead lever, see above).
-  Third recorded reward-shaping overshoot: additive penalties leave the
-  dialog harvest intact, and an early-return gate that removes it only
-  trades abstention for garbage.
-- PIPPA holdout gate is now runnable (src/holdout_eval.py): r19 357.11 vs
-  r16 358.74 teacher-forced ppl -- the round did not overfit real data.
-
-## Sibling-clone consolidation audit (2026-08-03)
-
-Audited /c/dev/tai (older clone at 1b749b7 plus untracked notebook-era
-files) for anything worth bringing across. Verdict: nearly nothing --
-every artifact there is a mock-era placeholder that the real
-implementations here supersede (npc_economy_sim 473B toy vs sim_econ.py,
-iterative_loop fake-metric sprints vs round.py, output_filter vs
-st_prepare beat stripping, runs/*.jsonl simulated curves, a 0-byte
-best_npc_checkpoint.json). The ONE adopted idea: price fidelity as an
-eval metric (from npc_final_eval.py) -- sim_eval now reports whether
-quoted prices in DEAL scenarios land within 30% of the oracle price.
-
-## World expansion (adopted from the accelerated-runs notebooks)
-
-- Year-tagged EVENTS, ORIGIN_PLACE per trade, LINEAGE per keeper: lore now
-  links item -> origin place -> historical event ("shimmering work out of
-  Karhold, from before the Comet Year").
-- EXPANDED_ITEMS: 4 combinatorial variants per canonical item (adjective x
-  price multiplier x structured property/provenance), fixed seed. Filler
-  descriptions from the notebooks were rejected; every expanded item keeps
-  the property + provenance structure.
-- Scarcity World in sim_econ: stock ticks deplete/regrow and every change
-  leaves a narratable reason (526 conversations cite them), restock
-  supplier chains (234: item -> origin place -> 1.3x reward -> [GOTO]).
-- Rejected: fixed [TRADE:50] templates, random-choice oracles, fake sprint
-  marathons, mana/combat scope creep. Deep spatial/territory sim is a
-  future lever if dialog geography ever needs it.
-
-## Evolutionary-sim research adoption (2026-08-03)
-
-From the third notebook (skill-tree/crafting evolutionary sim): adopted
-crafting-chain restocks (gather -> materials -> bench production, 161
-conversations cite it), volatility price shocks that move the oracle price
-AND the right choice (crash: sell fast; spike: hold firm), keeper levels
-scaling markup and haggle floor (masters refuse harder, 84 level-flavored
-declines), and apprentice/lineage texture. Rejected: the DNA-selection/
-extinction framing -- fitness curves are sim-for-sim's-sake; this sim
-exists to label good dialog decisions.
+Drained to memory (2026-08-23): /c/dev/tai sibling clone audited (only
+price-fidelity eval metric adopted); world lore expansion (EVENTS/
+ORIGIN_PLACE/LINEAGE, EXPANDED_ITEMS, Scarcity World restock chains);
+evolutionary-sim research adoption (crafting restocks, volatility price
+shocks, keeper levels) with DNA-selection/extinction framing explicitly
+rejected as sim-for-sim's-sake. Full detail: recall "sibling clone audit
+world expansion evolutionary sim BALROG 2026-08-03".
 
 ## Anti-overfit + gameplay expansion (2026-08-03)
 
@@ -7412,3 +7360,61 @@ paying real re-load cost per cycle in exchange for a clean XLA runtime.
 Not yet designed or attempted -- flagged here as the real next step
 rather than silently re-trying a smaller-cap variant that this round's
 own evidence already shows would not hold indefinitely.
+
+## Round 60 v23 real design: subprocess isolation is architecturally impossible, built kernel-level isolation instead
+
+Real investigation before writing any code: can a subprocess launched from
+the running Jupyter kernel actually initialize/acquire a TPU chip while
+the parent process still holds its own device handles? **No.** Cloud
+TPU's PJRT/libtpu runtime locks the WHOLE 8-chip board to a single
+owning OS process, not per-chip -- confirmed via direct inspection of
+build_round60.py's own device setup (`devices = [xm.xla_device(i) for i
+in range(n)]`, one call in the single kernel process claiming all 8
+chips including chip 0, the exact chip eval reuses). This is the
+documented reason Kaggle/Colab TPU notebooks are single-process. A
+second process calling `xm.xla_device()` on ANY chip while the first is
+alive fails at the driver level. `torch_xla` also has no supported
+release-and-reacquire call mid-process, so even a parent-releases-then-
+subprocess-claims design isn't achievable with the available API.
+
+Real, achievable equivalent found: the only process-isolation boundary
+that actually exists on this hardware is a full **Kaggle kernel
+restart**. Redesigned v23 around that:
+
+1. **Checkpoint save/load**: student weights, `student_opt.state_dict()`,
+   and `cycle_history` all saved FLAT to `/kaggle/working/` root at the
+   end of the loop (any stop reason) -- never a subdirectory, per the
+   real traintai round 7 finding that `kaggle kernels output` fails to
+   retrieve nested files. On start, a Kaggle dataset
+   (`heclgang/round60-checkpoint`, created this round) mounted at
+   `/kaggle/input/round60-checkpoint/` is checked for `config.json`; if
+   present, weights/optimizer/history all resume from it instead of a
+   fresh `STUDENT_ID` load.
+2. **`MAX_CYCLES_PER_RUN = 2`**: matches v22's real proven-survivable
+   envelope (cycles 1-2 both completed cleanly; cycle 3 died). The loop
+   stops cleanly (not mid-cycle) once `cycles_this_run` hits this cap,
+   distinct from the pre-existing wall-clock/sanity-gate stop reasons.
+   Real bug caught and fixed during this same implementation pass: the
+   old `EVAL_AFTER_EVERY_N=3` modulo check gated on the GLOBAL
+   (resumable) `cycle_num`, which would never be a multiple of 3 within
+   a fresh 2-cycle run's own `cycles_this_run` -- eval_after would have
+   silently stopped firing entirely under the new cap. Fixed: gate on
+   `cycles_this_run == MAX_CYCLES_PER_RUN` instead, giving every run
+   exactly one real eval_after at its last (riskiest) cycle.
+3. **`heclgang/round60-checkpoint` dataset**: created and wired into
+   `kernel-metadata.json`'s `dataset_sources` alongside the pre-existing
+   mindcraft source (verified both present after edit).
+4. **`traintai/experiments/round60_relaunch.sh`**: real local
+   orchestration -- polls kernel status, downloads output on COMPLETE,
+   publishes it as a new checkpoint dataset version, re-pushes the same
+   kernel to resume, loops (bounded `MAX_RELAUNCHES=20`). On ERROR,
+   downloads the log and stops rather than blind-retrying. Real gap
+   caught and fixed live: `kaggle datasets version` requires a
+   `dataset-metadata.json` inside the upload dir, which `kaggle kernels
+   output` never produces -- confirmed via a real test against an actual
+   metadata-less directory (`Metadata file not found: dataset-
+   metadata.json`) before shipping, not assumed.
+
+Pushed as Kaggle version 22. Real result pending -- this is the first
+live test of the kernel-restart-based isolation design; the relaunch
+script itself has not yet been run against real Kaggle infrastructure.
