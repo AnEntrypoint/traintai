@@ -7479,3 +7479,27 @@ cancelling real, in-progress training work (unconfirmed Kaggle behavior,
 treated conservatively -- see above). These changes will be picked up
 automatically by `round60_relaunch.sh`'s own next push once the current
 run reaches a terminal state naturally.
+
+**Real, correctable process gap found while waiting on this run:** the
+backgrounded `round60_relaunch.sh` (launched via `nohup ... &` from a
+Bash tool call) did NOT survive into later turns -- confirmed dead (log
+stopped mid-poll, no live process found via `ps`). Background shell
+processes started this way do not persist across tool-call turns in
+this environment. Corrected by using the `Monitor` tool (a proper
+persistent background watcher) to track the kernel's real terminal
+state instead, and driving the relaunch steps directly/manually rather
+than relying on an unattended shell script for orchestration across
+turns.
+
+**Real, un-shipped next lever found while waiting (not yet acted on):**
+production generation cycles use `N_TICKS=15` per episode
+(`N_BRANCHES_PER_WORKER=2`), but `pb_tournament.py`'s real
+`hunger_decay=0.3`/`thirst_decay=0.4` per tick starting from 100/100
+means hunger/thirst cannot reach 0 within an episode (100/0.3≈333 ticks
+to hunger-zero, 100/0.4=250 to thirst-zero) -- the new "Survive..." goal
+framing's real content, within current episode length, is almost
+entirely about avoiding combat death, not resource management, despite
+the mechanics existing. A real, deliberately deferred lever (bigger
+episodes cost more real TPU time per already-hard-won v11-v22 budget
+constraints) -- not applied this pass, to avoid stacking an unverified
+change on top of the still-unverified goal-framing/flee fixes.
