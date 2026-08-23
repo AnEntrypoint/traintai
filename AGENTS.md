@@ -7503,3 +7503,73 @@ the mechanics existing. A real, deliberately deferred lever (bigger
 episodes cost more real TPU time per already-hard-won v11-v22 budget
 constraints) -- not applied this pass, to avoid stacking an unverified
 change on top of the still-unverified goal-framing/flee fixes.
+
+## Round 60 v23 real result (Kaggle version 22): kernel died again, DECISIVE new finding -- the growth mechanism hits TRAINING itself, not just eval
+
+Real Kaggle log pulled after `kernels status` reported `ERROR` (real
+elapsed: kernel started 2026-08-23T03:41:19, died at log-relative
+11949.0s / ~3.3 real hours in). This run correctly had the v22
+checkpoint-resume code (confirmed via `real checkpoint resume check:
+... config.json present = False` in the log -- a fresh start, as
+expected for the first run) but did NOT yet have the goal-framing/flee
+commit (53aa232), which was pushed later while this run was still in
+flight -- confirmed by direct grep of the downloaded `pb_tournament.py`
+(`Survive`/`move_away_from` both absent).
+
+Timeline:
+- Cycle 1: generation (603 rows), `eval_before` 3 calls all clean
+  (439.4s/474.5s/510.1s, ~35s/call -- healthy), training 15 steps
+  **already showing real per-step growth within a single cycle**
+  (step 1: 3.8s, step 15: 189.5s -- a ~50x per-step slowdown just
+  across cycle 1's own 15 training steps, matching this project's
+  long-documented round61 finding that per-step training cost grows
+  and was only ever capped via `MAX_STEPS`, never fixed). Cycle 1
+  summary printed cleanly at 1869.3s, `eval_after: null` (correctly
+  skipped -- not the last cycle of this run... except `MAX_CYCLES_PER_RUN
+  =2` means cycle 1 should NOT run eval_after and cycle 2 SHOULD; this
+  matches the real code).
+- Cycle 2: generation (606 rows), `eval_before` 3 calls all clean
+  (3012.0s/4356.4s/5203.4s -- growing per-call, matching the now-
+  familiar degradation pattern, but all 3 finished). Training started
+  IMMEDIATELY at a much higher per-step cost than cycle 1 EVER reached
+  (step 1: 193.4s -- already higher than cycle 1's step 15) and kept
+  growing (step 15: 523.4s) -- confirms the per-step growth is REAL,
+  PROCESS-LIFETIME-CUMULATIVE, and carries over across cycles, not
+  reset by anything currently in the codebase (checkpoint save/load
+  round-trips WEIGHTS, not the XLA runtime's own accumulated
+  compilation/memory state within the still-alive process). All 15
+  steps completed (loss 0.75 -> 0.52, real, healthy convergence) at
+  10313.3s.
+- Then: **total silence for 1635.7s (~27 real minutes)** with zero log
+  output -- no eval_after ever started, no exception, nothing -- then
+  `DeadKernelError` at 11948.3s.
+
+**This overturns the v21/v22/v23 mitigation strategy's core premise.**
+Every mitigation so far (cleanup calls, eval call-count caps,
+`MAX_CYCLES_PER_RUN`) targeted the EVAL path specifically, on the
+assumption eval's `.generate()` calls were the real risk surface. This
+run proves the growth mechanism is broader: TRAINING steps
+(`.backward()`+`.step()`, no `.generate()` involved at all) show the
+identical compounding-then-death signature, and the kernel died during
+the gap AFTER training completed and BEFORE eval_after's first call
+even printed -- meaning the fatal state may have already accumulated
+during training itself, with eval_after never getting a chance to run
+at all. `MAX_CYCLES_PER_RUN=2` does not actually bound real risk
+exposure the way intended, since cycle 2's OWN training already carries
+enough accumulated state to kill the kernel on its own.
+
+**Real, honest reassessment:** the underlying mechanism (round61's
+"LFM2.5-350M has genuine growing per-op cost under sustained XLA lazy
+execution") is not eval-specific, not training-specific, and not fixed
+by anything tried across v16-v23 -- it is a property of the TPU/XLA
+process itself accumulating state across ANY sustained sequence of real
+ops, that nothing in this codebase's control (mark_step/gc.collect/
+zero_grad/call-count caps/cycle caps) has ever actually released. The
+kernel-level relaunch design (v23's real architectural contribution --
+process isolation via full kernel restart) is therefore MORE important
+than previously understood, not less: `MAX_CYCLES_PER_RUN` should
+arguably be even lower (a single cycle per run, or fewer real steps per
+cycle) given cycle 2's training alone nearly killed the kernel without
+eval_after ever running. Not yet changed -- flagged as the real next
+lever, to be decided with real per-run TPU-hour cost in mind (more
+relaunches = more real per-run overhead from teacher/student reload).
