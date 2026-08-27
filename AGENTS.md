@@ -7658,3 +7658,17 @@ recursively rather than a flat `torch.save` on the raw XLA-resident
 state dict. No change needed to the load path (`from_pretrained`
 already auto-detects `.bin` vs `.safetensors`, `load_state_dict`
 already handles device placement automatically).
+
+## Round 60 v25 real result (Kaggle version 24): DIED AGAIN, even with MAX_CYCLES_PER_RUN=1
+
+Real log pulled after `kernels status` reported `ERROR` (real elapsed
+~10847s / ~3hrs, `DeadKernelError`, same signature as every prior
+death). No checkpoint files present in the output (confirmed: no
+`.bin`/`.safetensors`/`optimizer.pt`/`cycle_history.json`) -- died
+before reaching the post-loop save code again, meaning even a single
+training cycle is not reliably survivable on this codebase's current
+design. This is a genuinely unresolved, still-open problem -- paused
+here to address a separate, higher-priority user request (compiling
+training-process lessons for a new MiniCPM coding-agent training
+effort); the real fix for round60's own remaining instability is not
+yet found and should be the next focus when this resumes.
