@@ -7672,3 +7672,138 @@ here to address a separate, higher-priority user request (compiling
 training-process lessons for a new MiniCPM coding-agent training
 effort); the real fix for round60's own remaining instability is not
 yet found and should be the next focus when this resumes.
+
+**Correction on closer read of the real log**: cycle 1 actually
+completed FULLY this run -- `eval_before` (3 calls, fitness 5.00),
+training (15 steps, healthy loss 7.07->0.66), `eval_after` (3 calls,
+fitness 5.00, real generated actions `flee`/`attack`/`attack`), the
+real cycle summary printed, and the loop stopped cleanly via
+`MAX_CYCLES_PER_RUN=1` at 4389.0s. The kernel then died SILENTLY --
+zero log output, not even this run's own `print()` calls for
+checkpoint save success/failure -- for 6456.7s (~1.8 real hours)
+before `DeadKernelError`. This means the death happened DURING the
+checkpoint-save cell itself, before either the success or the
+exception-handler print ever ran -- worse than v24's failure mode
+(which at least printed a real `RuntimeError` and completed). Real,
+plausible cause: the new `.cpu()` materialization added to fix v24's
+save bug forces a full, real sync of the model's accumulated XLA lazy
+execution graph -- exactly the operation category (any sustained real
+op against the XLA runtime) already proven to trigger this project's
+long-standing unresolved growth-then-death mechanism. The save fix may
+have traded one real bug (a loud RuntimeError) for a worse one (a
+silent hang-then-death), by being the single most expensive real XLA
+op this codebase now performs per run.
+
+## Round 60 v26: xm.save() replaces naive per-tensor .cpu(), real optimizer-resume bug also fixed
+
+Real fix for v25's silent checkpoint-save death: replaced the naive
+`{k: v.cpu() for k, v in state_dict.items()}` dict comprehension (one
+independent per-tensor sync call) with `xm.save()` -- `torch_xla`'s own
+purpose-built checkpoint API, which performs ONE coordinated sync via
+its internal rendezvous path rather than N independent per-tensor
+`.cpu()` calls from plain Python. This is the standard, documented
+mechanism for this exact operation, not a new untested idea.
+`student.config.save_pretrained('/kaggle/working')` still handles the
+config/tokenizer files (confirmed working in both v24 and v25's real
+logs); only the weight-tensor and optimizer-tensor serialization now
+goes through `xm.save()`.
+
+Also found and fixed a real, separate, pre-existing bug while in this
+code: `student_opt` was created fresh via `torch.optim.AdamW(...)`
+every single run with NO resume path at all -- Adam's real momentum
+state was silently discarded on every kernel restart despite the
+checkpoint round-trip existing specifically to prevent this. Fixed:
+`student_opt.load_state_dict(torch.load(.../optimizer.pt))` now runs
+when `resume_checkpoint_present`, wrapped in try/except (a resume
+failure degrades to fresh optimizer state, non-fatal, not a hard stop).
+
+Not yet tested against real hardware. Given the pattern so far (each
+fix attempt has revealed a new real failure mode one layer deeper --
+v22 eval calls, v23 training itself, v24 the save path's serialization
+format, v25 the save path's sync mechanism), the next real test is
+needed before declaring this resolved.
+
+## Round 60: how to accelerate future lever/bug discovery -- lessons from this diagnostic chain's own real cost
+
+This round's v11-v25 chain took roughly 15 real kernel pushes and many
+real hours of TPU wall-clock to find and fix a single class of bug
+(eval mechanism silently broken, then XLA per-op growth, then
+checkpoint serialization). Real, concrete process changes for next time,
+derived directly from what actually slowed this one down:
+
+**1. Instrument before the first real push, not after the third failure.**
+Every decisive finding this round came from adding a counter/log line
+BEFORE guessing further (fallback-exception counts, per-step timing,
+real generated-vs-fallback call counts) -- but each was added only
+after 2-4 blind pushes had already failed the same way. A new training
+loop's FIRST real push should already carry: per-op wall-clock timing
+(not just per-cycle), a real generated/fallback call counter on any
+function with a silent-fallback exception path, and explicit
+before/after checkpoints of anything the loop claims to persist
+(weights, optimizer state) -- verified present in the ACTUAL downloaded
+output, not assumed from a print statement.
+
+**2. Triage every kernel death by WHERE it happened, immediately, from the
+real log -- never re-push blind.** Every real push in this chain that
+skipped a full log read before deciding the next fix ended up fixing
+the wrong layer (e.g. capping eval calls when the real problem was
+process-lifetime-cumulative XLA state; assuming a "RuntimeError" fix
+would also fix a later silent hang). The real triage sequence that
+worked once adopted: pull the log, find the LAST timestamped line
+before death, diff that against the previous run's timeline at the
+same point, and only then decide whether this is the same bug
+recurring or a genuinely new one. A bug that "looks the same" (another
+DeadKernelError) can be a structurally different failure -- confirmed
+directly this round (v23 died in eval, v24's own training died with the
+same signature, v25 died in the checkpoint-save code entirely).
+
+**3. Isolate before iterating on the full pipeline, once 2 fixes in a row
+fail identically.** This project's OWN round61 (a minimal, single-chip,
+no-pipeline diagnostic kernel) is the single highest-value diagnostic
+investment in this project's whole history -- it definitively separated
+"pipeline bug" from "inherent model/framework behavior" in one clean
+test, after 4 separate full-pipeline fix attempts had each failed the
+same way. The real trigger rule: two structurally different fixes to
+the same symptom both failing identically is itself real evidence the
+bug is NOT in the code being iterated on -- stop iterating on the full
+pipeline and build the minimal isolation kernel instead. This is
+cheaper per real TPU-hour than a fifth full-pipeline guess, even though
+it feels like a detour.
+
+**4. Never let a fix ship without checking what it costs in NEW risk
+surface.** v24's checkpoint-save fix (real, necessary, correctly
+targeted at a real RuntimeError) introduced a WORSE failure mode (a
+silent hang) by using the most expensive possible real fix shape (N
+independent per-tensor syncs) for an already-fragile XLA runtime. The
+real lesson: when fixing a bug that touches the XLA runtime at all,
+default to the framework's own purpose-built API for that exact
+operation (`xm.save`, not manual `.cpu()` loops) rather than the first
+correct-looking fix -- "technically correct" and "safe against this
+project's own already-proven danger pattern" are not the same bar.
+
+**5. Real observability gaps this round exposed, worth building proactively
+next time, not reactively:** (a) no way to see a kernel's real log while
+it's mid-cycle without a full re-pull cycle -- `kaggle kernels logs -f`
+exists and was proven useful but was reached for late each time, not by
+default; (b) no automated real diff between this run's per-op timing
+and the last N runs' -- every "is this growth pattern the same as last
+time" comparison this round was done by hand, reading two pasted logs
+side by side; (c) no standing, reusable minimal-isolation-kernel
+TEMPLATE -- round61 was built from scratch when the need arose, costing
+real setup time at the exact moment speed mattered most. A next
+project should keep a maintained, ready-to-push minimal diagnostic
+kernel (bare model + one chip + no pipeline) as a standing tool, not a
+one-off built under pressure.
+
+**6. Don't let a genuinely-just-discovered new capability (a lever) go
+untested for multiple rounds while chasing an unrelated infra bug.**
+The goal-framing and flee-mechanic fixes (real, cheap, already-shipped
+levers) have now sat in the codebase for 3 real pushes without a single
+clean completion to actually observe their effect on model behavior
+beyond "the model used flee at least once." Real process fix: when an
+infra bug and a content/lever change are both queued, ship the
+infra-only fix FIRST as its own isolated push (proving the platform
+issue is resolved) before combining it with a new, still-unverified
+lever change -- conflating "does the run survive" with "does the new
+lever help" in the same push makes both questions harder to answer from
+one real result.
