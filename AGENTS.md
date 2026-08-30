@@ -7807,3 +7807,43 @@ issue is resolved) before combining it with a new, still-unverified
 lever change -- conflating "does the run survive" with "does the new
 lever help" in the same push makes both questions harder to answer from
 one real result.
+
+## Round 60 v26 real result (Kaggle version 25): kernel COMPLETED cleanly, but xm.save() silently wrote no files
+
+Real log pulled after `kernels status` reported `COMPLETE` -- genuinely
+good news on the crash front: no `DeadKernelError`, no hang, cycle 1
+completed fully (eval_before, 15 real training steps, eval_after, all
+clean), and the run's own `print('real checkpoint saved: ...')` fired
+with no exception. Real total wall-clock 4774.5s (~80 real minutes).
+
+**But `kaggle kernels files` (the real, authoritative listing of what
+the kernel actually produced -- not the output-pull mechanism, which
+has its own known separate limitations) shows NO `pytorch_model.bin`
+and NO `optimizer.pt` at all.** `config.json`/`generation_config.json`/
+`cycle_history.json` all real and present. The checkpoint-save code's
+own success print fired unconditionally after both `xm.save()` calls
+returned without raising -- but the weight/optimizer files never
+actually materialized on disk.
+
+Real, most likely cause (not yet confirmed against real hardware,
+flagged honestly as a hypothesis): `xm.save()`'s documented signature
+is `xm.save(data, path, master_only=True, global_master=False)` --
+designed for real multi-process/multi-host SPMD training, where only
+the master ordinal actually performs the write and other ranks
+participate in a sync-only rendezvous. This notebook's real
+architecture is a SINGLE process explicitly addressing all 8 chips via
+`xm.xla_device(i)` (never `xmp.spawn`, never real SPMD) -- `xm.save()`'s
+internal master-ordinal detection may not behave as expected outside
+the distributed-launch pattern it was designed for, silently skipping
+the actual write while still returning normally.
+
+**Real fix applied** (also not yet tested against real hardware):
+reverted away from `xm.save()` back to explicit per-tensor `.cpu()`
+materialization (proven, in v25's log, to at least attempt the write --
+v25's failure was a HANG during the sync, not a silent no-op), but with
+a real, targeted change to reduce hang risk: call `xm.mark_step()` ONCE
+first to flush all pending lazy ops from the whole cycle, THEN perform
+the per-tensor `.cpu()` moves against already-synced (non-lazy) tensors
+-- cheap, since nothing lazy remains to compute at that point, rather
+than each `.cpu()` call individually forcing its own partial graph
+execution against still-pending lazy state.
