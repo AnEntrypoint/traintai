@@ -8017,3 +8017,49 @@ happened on every round60 v25/v27/v28 push. Pushed as
 this should resolve in well under 15 real minutes given the bounded
 step count and hard save timeout, a genuine speed improvement over
 round60's own multi-hour diagnostic cycle.
+
+## Round 61 v2 real result: DECISIVE -- the checkpoint save does NOT hang in isolation, overturning the whole hang hypothesis
+
+Real result, resolved in 501.7s (~8.4 real minutes) total -- confirms
+the speed benefit of isolated diagnostics this file's own "Running the
+next round faster" section argues for. Two real findings:
+
+1. **Training-step growth reproduced in isolation**, confirming this
+   project's already-known round61-v1 finding: per-step elapsed deltas
+   grew 4.5s -> 18.4s -> 39.9s -> 50.1s -> 66.7s -> 56.1s -> 76.7s
+   across 7 real steps, hitting the diagnostic's own 300s hard timeout
+   at step 7/30. Not new information, but a real, direct confirmation
+   the growth is genuinely in the model/framework, not round60's
+   pipeline complexity.
+
+2. **The checkpoint save (`xm.mark_step()` + `.cpu()`-materialized
+   `save_pretrained()`) did NOT hang here.** It completed in 93.0s --
+   `xm.mark_step()` returned after 91.0s, `.cpu()` materialization
+   finished at 92.5s, real files written (`model.safetensors`,
+   `config.json`, `generation_config.json`). This is genuinely
+   surprising given round60 v27/v28 both showed this exact same
+   operation sequence hang for 2+ real hours.
+
+**This overturns the entire "checkpoint save inherently hangs" hypothesis
+this whole v25-v28 sub-chain was built on.** In full isolation (one
+chip, one model, no generation workers, no eval, no pipeline), the save
+completes in under 2 real minutes even AFTER the per-step training cost
+had already grown to 76.7s/step (worse per-step cost than round60's own
+runs ever showed at their own point of death). The real, necessary
+conclusion: **something specific to round60's own pipeline -- not the
+model, not the save API, not accumulated per-step training cost alone
+-- is the actual trigger.** The one structural difference round61's
+isolated test does NOT have: 7 OTHER real teacher-worker chips loaded
+and used earlier in the SAME process, each holding their own real LFM2.5-
+VL-3B model and accumulated XLA state on separate chips within the
+shared PJRT board-wide runtime this project already confirmed exists
+(see the v23 process-isolation section above -- PJRT locks the whole
+board to one process, not per-chip). Real, testable hypothesis for the
+next isolation step: does the checkpoint-save hang reproduce if the
+isolated diagnostic ALSO loads several other real models onto other
+chips first (mimicking round60's 7-teacher-worker setup), even without
+ever using them for real generation? This would directly test whether
+merely HOLDING multiple chips' worth of resident state (not training
+step count, not generation, not eval) is the real trigger -- a
+genuinely different variable than anything tested so far in this whole
+v16-v28/round61 diagnostic chain.
