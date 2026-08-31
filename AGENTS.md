@@ -8063,3 +8063,19 @@ merely HOLDING multiple chips' worth of resident state (not training
 step count, not generation, not eval) is the real trigger -- a
 genuinely different variable than anything tested so far in this whole
 v16-v28/round61 diagnostic chain.
+
+## Round 61 v3: real multi-chip-resident-state isolation test, pushed
+
+Built and pushed directly, testing the hypothesis above. New cells:
+load the real teacher model (`LiquidAI/LFM2.5-VL-3B`, matching round60's
+own `N_GEN_WORKERS=7` exactly) onto chips 1-7, THEN repeat the identical
+training+checkpoint-save sequence on the SAME already-loaded chip-0
+student model with a fresh optimizer. Same hard-timeout discipline as
+v2 (300s training cutoff, 300s save cutoff via a background thread) so
+this resolves in minutes regardless of outcome. Pushed as
+`heclgang/round61lfm2trainisolated` version 3. Real result pending --
+if the save hangs here where v2's single-chip test did not, multi-chip
+resident state (not step count, not generation, not eval) is confirmed
+as the real trigger; if it does NOT hang, the search continues (next
+candidate: whether the OTHER chips must have actually been used for
+real generation work, not just loaded).
