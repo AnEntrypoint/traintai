@@ -7847,3 +7847,91 @@ the per-tensor `.cpu()` moves against already-synced (non-lazy) tensors
 -- cheap, since nothing lazy remains to compute at that point, rather
 than each `.cpu()` call individually forcing its own partial graph
 execution against still-pending lazy state.
+
+## Round 60 v27 real result (Kaggle version 26): xm.mark_step() itself hung for 2.5 real hours before kernel death -- the hypothesis was backwards
+
+Real log pulled after `kernels status` reported `ERROR` (~13480.9s /
+~3.75 real hours in, `DeadKernelError`). Cycle 1 was, once again, fully
+healthy: `eval_before` 3 clean calls (trade/attack/attack, fitness
+5.00), training 15 real steps (loss 7.05->0.67), `eval_after` 3 clean
+calls -- **all three generated `'flee'`**, a real, consistent signal
+(not random noise across the 3 samples) that the trained model now
+prefers flee after training, versus a mixed trade/attack/attack choice
+before training. Cycle summary printed cleanly, loop stopped via
+`MAX_CYCLES_PER_RUN=1` at 4485.5s.
+
+**Then `xm.mark_step()` itself -- the exact "safe, already-proven"
+call this fix was built around -- hung for 8994.3s (~2.5 real hours)
+before the kernel died.** The deprecation warning (`Use torch_xla.sync
+instead`) confirms the call actually started executing, twice (matches
+2 real `xm.mark_step()` calls in the code: once after training as
+existing post-training cleanup, once as v27's new pre-.cpu() flush).
+No further log output at all after that -- not even the `.cpu()` calls
+or the on-disk-verification code ever got a chance to run.
+
+**This proves the v27 hypothesis backwards.** `xm.mark_step()` was
+assumed cheap-when-called-after-a-cycle-completes because it had been
+used successfully as post-training cleanup since v21 -- but that prior
+usage was ALWAYS followed immediately by more real training-loop work
+(more cycles, more generation), never by a full stop-and-flush-
+everything call after training AND eval_after's own additional lazy
+state had ALSO accumulated. The real, consistent pattern across v22-v27
+now: it is not eval specifically, not training specifically, not
+`xm.save()` specifically, not naive `.cpu()` specifically, not
+`xm.mark_step()` specifically -- it is **any single op that attempts to
+resolve/sync the FULL accumulated lazy graph of an entire cycle
+(generation + training + eval_after combined)**, regardless of which
+specific API is used to trigger that resolution. Cycle 1's OWN
+`eval_after` (3 calls) survives because the growth compounds gradually
+across calls, but the very next real op after a full cycle completes
+appears to inherit ALL of that cycle's accumulated state at once and
+reliably dies.
+
+**Real, structural implication**: no checkpoint-save API choice will
+fix this -- the problem is not "which function serializes weights,"
+it's "the XLA runtime's own accumulated lazy-graph state after a full
+real cycle is itself too large/expensive to resolve via ANY single
+synchronous call, regardless of which op triggers the resolution."
+Genuinely different real levers worth considering next, none yet
+attempted: (a) save the checkpoint INCREMENTALLY, immediately after
+training completes and BEFORE eval_after ever runs (accepting the real
+tradeoff of losing eval_after's own before/after comparison data, but
+checkpointing the actually-more-valuable trained weights before the
+riskiest remaining op); (b) reduce eval_after to 0 or 1 calls instead
+of 3, to minimize how much MORE lazy state accumulates on top of
+training's own; (c) an explicit, bounded-timeout wrapper around the
+save attempt (e.g. run it in a way that can be abandoned after N real
+minutes rather than hanging for hours) if Kaggle's real execution
+environment permits that; (d) accept that a genuinely complete
+checkpoint (weights AND a verified eval_after measurement) may not be
+achievable in a single kernel run at all, and split generation+train
+and eval into two SEPARATE kernel runs, checkpointing between them.
+
+## Round 60 v28: checkpoint save moved to fire right after training, BEFORE eval_after -- option (a) from v27's write-up
+
+Implemented the lowest-risk real lever from v27's own list: `student.
+save_pretrained`/`torch.save` extracted into a real, reusable
+`save_student_checkpoint(tag)` function, called TWICE per cycle now --
+a PRIMARY save immediately after `run_training_cycle()` completes and
+BEFORE `eval_after` ever runs (the real, structurally safer point,
+since only training's own lazy state has accumulated at that moment,
+not eval_after's additional 3 calls on top), plus a SECONDARY save
+after the whole loop exits as a safety net (re-saves with the cycle's
+real eval_after result included in `cycle_history`, if eval_after also
+succeeded). Real, explicit tradeoff accepted: if eval_after itself is
+what kills the kernel, the primary save has already preserved the
+trained weights and optimizer state -- losing eval_after's own
+before/after fitness measurement for that cycle is a real, acceptable
+cost against losing an entire cycle's real training progress.
+
+The existing post-training `zero_grad`/`gc.collect`/`xm.mark_step`
+cleanup block still runs, now AFTER the checkpoint save (the save's own
+`xm.mark_step()` already covers the flush this cleanup was doing;
+redundant but harmless, left in place rather than risk removing a
+previously-working real mitigation without a live test to confirm its
+removal is safe).
+
+Not yet tested against real hardware. This is the first real attempt
+at addressing the STRUCTURAL finding from v27 (any full-cycle-lazy-
+graph resolution is dangerous, regardless of API) rather than another
+API-swap on the same call site.
