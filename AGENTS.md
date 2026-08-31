@@ -7992,3 +7992,28 @@ sufficient to reproduce the hang, and if so, at what real step count
 threshold. This mirrors round61's own precedent (the single highest-
 value diagnostic investment in this project's history) for exactly the
 situation it exists to resolve.
+
+## Round 61 v2: real isolated checkpoint-save-after-training diagnostic, pushed
+
+Reused round61's existing minimal single-chip diagnostic kernel
+(`heclgang/round61lfm2trainisolated`) rather than building a new one
+from scratch -- exactly the "keep a standing, ready-to-push minimal
+diagnostic kernel" lesson this file's own "Running the next round
+faster" section names. Added a real new cell: after the SAME 30 real
+training steps the kernel already ran (fixed synthetic batch,
+identical shape to round60's own training), attempt `xm.mark_step()`
++ a real `.cpu()`-materialized `save_pretrained()` -- the EXACT
+sequence that hung for 2.6 real hours in round60 v28's full pipeline,
+now fully isolated from generation workers, eval, and every other
+pipeline complexity.
+
+Real, important safety improvement over round60's own design: the
+save attempt runs in a background thread with a real hard
+`join(timeout=300)` -- if it hangs, this diagnostic gets a decisive
+real answer within 5 minutes instead of silently burning 2-3 real
+hours before Kaggle itself force-kills the run, which is what
+happened on every round60 v25/v27/v28 push. Pushed as
+`heclgang/round61lfm2trainisolated` version 2. Real result pending --
+this should resolve in well under 15 real minutes given the bounded
+step count and hard save timeout, a genuine speed improvement over
+round60's own multi-hour diagnostic cycle.
