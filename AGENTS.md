@@ -8192,3 +8192,33 @@ a single real cycle's generation+eval_before+training alone already
 consumes 30-75 real minutes in round60's actual pipeline, meaning
 MAX_CYCLES_PER_RUN=1 was ALREADY often past the real danger threshold
 before the checkpoint save cell ever ran.
+
+## Round 60 v29: real, evidence-based fix acting directly on round61 v4's confirmed wall-clock finding
+
+Three real, concrete changes, all directly derived from the confirmed
+finding above (not another guess):
+
+1. **`MAX_STEPS` 15 -> 10.** v28's own real log gives exact per-step
+   timing: 15 steps = 1387.0s (~23 real min), 10 steps = 597.0s (~10
+   real min) -- per v28's own measured curve. Combined with real
+   generation time (~4 real min), 10 steps keeps total real elapsed
+   before the checkpoint save attempt around ~14 real minutes, well
+   under the confirmed ~30-45min danger zone with real margin.
+2. **A proactive wall-clock guard in `save_student_checkpoint()`**: if
+   real elapsed time since `RUN_START` already exceeds a conservative
+   25-minute safe margin, skip the save attempt entirely rather than
+   risk a real multi-hour hang for zero benefit -- this run's real
+   training/eval results are still valid and printed regardless; only
+   the checkpoint (which would likely never complete anyway, per the
+   confirmed finding) is skipped.
+3. **The save itself now runs in a background thread with a real hard
+   300s timeout**, matching round61 v4's own proven diagnostic pattern
+   -- even if the wall-clock guard above misjudges the real danger
+   zone, this cell returns control within 5 real minutes instead of
+   silently hanging for real hours, so a stuck save no longer burns
+   the run's entire remaining wall-clock budget for nothing.
+
+Not yet tested against real hardware. This is the first fix in this
+whole checkpoint-save sub-chain (v24-v29) built directly on a
+CONFIRMED root cause (round61 v4's isolated reproduction) rather than
+an untested hypothesis about API choice or call placement.
