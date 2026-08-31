@@ -8399,3 +8399,42 @@ proven to work). Real next step: keep the checkpoint-publish-and-push
 cycle going to accumulate more real cycles, and separately investigate
 why `real_student_eval`'s fitness metric shows zero measurable spread
 despite the real, substantial loss decrease underneath.
+
+## Round 60: REAL ROOT CAUSE FOUND for the fitness=5.00-always eval ceiling
+
+Direct math confirms the cause. `real_student_eval` calls
+`run_tournament(n_branches=1, n_agents=1, n_ticks=3, ...)` (the v22
+call-count-cap fix). With `n_agents=1`, `resolve_aggro` (which finds
+OTHER agents within range to attack/trade/flee against) ALWAYS returns
+an empty list -- there is no other agent to interact with. This means
+`attack`, `trade`, and `flee` can NEVER have any real mechanical
+effect with a single-agent episode, regardless of what the model
+outputs -- only `wait` and a no-op `move_toward` are possible. The
+single agent therefore never takes damage, never dies, and every
+legal-word response counts as "clean": `summary['clean']=3` (one per
+tick), `summary['counter']=0`, `survivors=1` always -> `fitness = 3 +
+2*1 - 0 = 5` EVERY SINGLE TIME, exactly matching every real observed
+eval result (`fitnesses=[5], mean=5.00`) across this entire session's
+runs, including cycle 3's real result reported just now.
+
+**This is a real, structural eval-design bug, not a resolution/small-
+sample-noise issue as previously hedged.** The eval is not measuring
+model quality with low sensitivity -- it is measuring a QUANTITY THAT
+CANNOT VARY given its own current configuration, full stop. Every
+"fitness delta 0.00" result recorded in this entire round60 v20-v31
+sub-chain (after the v11-v19 silent-fallback bug was fixed) is this
+same real, structural ceiling, not evidence about the model at all.
+
+**Real fix required**: `n_agents` must be >= 2 for combat/trade/flee
+mechanics to ever be reachable. The v19/v22 call-count-cap work
+(reducing `n_agents` from 2/3 down to 1) was done specifically to
+survive the real XLA-hang bug (since fixed for real in v29 via the
+wall-clock-based root cause). Now that the checkpoint/training pipeline
+is proven stable with real cumulative learning (loss 0.88->0.35->0.21
+across 3 chained cycles), the eval's own `n_agents=1` constraint is a
+real, separate, now-addressable bug -- raising it back to `n_agents=2`
+(the original v19-era value, before the call-count cap conflated "fewer
+total calls" with "fewer agents") should restore real fitness variance
+without reintroducing the fixed XLA-hang risk, since the wall-clock
+guard/bounded-thread-save mechanism (v29) is what actually prevents
+that now, independent of eval call count.
