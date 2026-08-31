@@ -8127,3 +8127,18 @@ direct test: does the checkpoint save hang if the isolated diagnostic
 is made to run for a comparably long real wall-clock duration BEFORE
 attempting the save, independent of what specific work fills that
 time?
+
+## Round 61 v4: real wall-clock-duration isolation test, pushed
+
+Built and pushed directly: a wall-clock-BOUNDED (not step-count-bounded)
+real training loop, running cheap small steps for a real ~2400s (~40
+real minutes, matching round60's own real cycle duration before its
+save attempt), THEN the identical checkpoint save. Same hard-timeout
+discipline (300s save cutoff via background thread). Pushed as
+`heclgang/round61lfm2trainisolated` version 4. Real result pending --
+if the save hangs here where v2 (short duration) and v3 (short
+duration + multi-chip) did not, real elapsed wall-clock time alone
+(independent of step count, chip count, or specific work type) is
+confirmed as the trigger -- a genuine, real TPU/XLA/libtpu-level
+resource degradation over process lifetime, not tied to any specific
+operation this codebase performs.
