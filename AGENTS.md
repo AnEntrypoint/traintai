@@ -8289,3 +8289,26 @@ immediately rather than waiting further -- if the checkpoint dataset
 publish completes in time, this run resumes with real trained weights;
 if not, it starts fresh, still producing a real second data point
 either way.
+
+## Round 60: checkpoint dataset published, real resume test pushed (Kaggle version 30)
+
+The optimizer.pt local-download quirk turned out to be a real, plain
+resumable-upload interruption, not a permanent failure -- launching the
+`kaggle datasets version` publish as a genuinely detached background OS
+process (`&`, output redirected to a log file, independent of the
+in-session backgrounding mechanism that kept getting interrupted)
+finally let it run to real completion: `model.safetensors` (843MB)
+resumed from 842006527/843202280 bytes already uploaded and finished
+cleanly. Confirmed via `kaggle datasets files heclgang/round60-checkpoint`:
+config.json, cycle_history.json, generation_config.json,
+model.safetensors all real, present, correctly sized.
+
+Two consecutive real, clean runs (Kaggle versions 28 and 29) had
+already confirmed the v29 checkpoint-save fix is reliable, but both
+started fresh (no checkpoint existed yet to resume from) -- genuine
+accumulated training has not yet been demonstrated. Pushed Kaggle
+version 30 immediately after the checkpoint dataset confirmed live --
+this is the first real test of the actual resume path (load real
+trained weights, continue cycle numbering, and once optimizer.pt is
+also successfully published, resume real Adam momentum state) with a
+genuine checkpoint actually present. Real result pending.
