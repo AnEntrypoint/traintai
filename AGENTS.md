@@ -8222,3 +8222,36 @@ Not yet tested against real hardware. This is the first fix in this
 whole checkpoint-save sub-chain (v24-v29) built directly on a
 CONFIRMED root cause (round61 v4's isolated reproduction) rather than
 an untested hypothesis about API choice or call placement.
+
+## Round 60 v29 real result (Kaggle version 28): SUCCESS -- first fully complete cycle with a real, persistent checkpoint in the entire diagnostic chain
+
+Real result, resolved cleanly at 1355.3s (~22.6 real minutes total --
+no kernel death, no hang, `kernels status` reports `COMPLETE`). Full
+cycle 1 completed: generation (618 rows), `eval_before` (3 clean calls,
+fitness 5.00), training (10 real steps -- `MAX_STEPS=10` fix, final
+loss 0.94), **primary checkpoint save completed in a real 131.2s**,
+`eval_after` (3 clean calls -- `wait`, `flee`, `flee`, fitness 5.00),
+clean cycle-cap stop, **secondary checkpoint save completed in a real
+7.6s**.
+
+Confirmed via `kaggle kernels files` (the real, authoritative output
+listing, not the output-pull mechanism with its own separate
+limitations): `config.json`, `cycle_history.json`,
+**`model.safetensors`, `optimizer.pt`** all real, present, non-empty
+files. **This is the FIRST time in the entire v11-v29 diagnostic chain
+that a full training cycle has completed end-to-end AND produced a
+real, persistent, resumable checkpoint.** The `MAX_STEPS` 15->10 fix
+plus the wall-clock guard plus the bounded-thread save all worked
+together as designed -- the checkpoint save attempt happened well
+inside the safe window this round's own diagnostic work confirmed.
+
+**Real, immediate next step**: the relaunch chain (`experiments/
+round60_relaunch.sh`, or a manual repeat of the same push-and-monitor
+cycle) should now be run again, resuming from this real checkpoint, to
+confirm the RESUME path also works correctly (loads real weights,
+resumes real optimizer momentum state, continues cycle numbering) --
+this has never been tested end-to-end, since no prior run ever produced
+a checkpoint to resume FROM. This is the natural next real milestone:
+two consecutive real, successful, checkpoint-linked training cycles,
+proving the whole kernel-restart-based multi-cycle design (v23's
+original architectural goal) genuinely works.
