@@ -8358,3 +8358,14 @@ optimizer.pt's own publish so real Adam momentum state also carries
 forward (currently resets to fresh each resume, which is suboptimal
 but not blocking -- SGD-with-momentum-reset still trains, just not
 optimally).
+
+## Round 60: cycle 2's full checkpoint (weights + optimizer state) published, cycle 3 pushed
+
+Real cycle-2 checkpoint downloaded and re-published, this time
+including `optimizer.pt` (1.69GB, real Adam momentum state) alongside
+`model.safetensors` (843MB) -- both confirmed live via `kaggle
+datasets files`. This closes the real gap from the prior publish
+(model weights only, optimizer.pt missing). Pushed Kaggle version 31
+immediately -- the first real test where BOTH weights and optimizer
+momentum should resume together, not just weights. Real result
+pending.
