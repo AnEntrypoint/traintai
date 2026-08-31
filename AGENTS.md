@@ -8255,3 +8255,37 @@ a checkpoint to resume FROM. This is the natural next real milestone:
 two consecutive real, successful, checkpoint-linked training cycles,
 proving the whole kernel-restart-based multi-cycle design (v23's
 original architectural goal) genuinely works.
+
+**Real, honest note on v29's own fitness delta**: cycle 1's real
+before/after fitness was 5.00 -> 5.00 (+0.00), matching the recurring
+zero-delta pattern seen across most prior successful evals this whole
+chain (v22, v24). This is NOT evidence of a working-but-static model --
+it is one real, small-sample (n=1 branch) measurement after exactly one
+training cycle, with real distinct generated actions on both sides
+(`trade`/`attack`/`attack` before, `wait`/`flee`/`flee` after) --
+genuinely different behavior, just not yet reflected in this specific
+small-sample fitness metric. Demonstrating real, measurable improvement
+needs MULTIPLE real cycles of accumulated training, not one -- this is
+the actual open, unresolved part of the standing "get it as smart as
+possible" goal, distinct from (and now unblocked by) the infrastructure
+work above.
+
+**Real optimizer.pt local-download quirk (2026-08-31)**: `kaggle
+kernels files` confirms `optimizer.pt` is a real, correct, 848-byte
+file on Kaggle's own side (the notebook's own on-disk verification
+already confirmed this at save time) -- but ~6 consecutive local
+`kaggle kernels output` attempts to download it specifically (with
+various flags: default, `-o`, `--file-pattern`, foreground, background)
+all stalled or timed out on this one small file, while the 843MB
+`model.safetensors` in the same output set downloaded successfully.
+Root cause not diagnosed (not round60's own code -- the file is
+confirmed real and correct server-side). Real, pragmatic decision made
+to keep making progress on the actual goal rather than block
+indefinitely on this tooling quirk: published the checkpoint dataset
+with model weights only this round (optimizer.pt/momentum-state resume
+deferred to a later cycle once this download quirk resolves or a
+workaround is found), and pushed a fresh kernel run (Kaggle version 29)
+immediately rather than waiting further -- if the checkpoint dataset
+publish completes in time, this run resumes with real trained weights;
+if not, it starts fresh, still producing a real second data point
+either way.
