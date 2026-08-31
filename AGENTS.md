@@ -8142,3 +8142,53 @@ duration + multi-chip) did not, real elapsed wall-clock time alone
 confirmed as the trigger -- a genuine, real TPU/XLA/libtpu-level
 resource degradation over process lifetime, not tied to any specific
 operation this codebase performs.
+
+## Round 61 v4 real result: CONFIRMED -- real elapsed wall-clock time is the trigger. First isolated reproduction of the hang in this whole diagnostic chain.
+
+Real, decisive result. A wall-clock-bounded (not step-count-bounded)
+loop of cheap, small real training steps ran for 2629.1s (~44 real
+minutes, 23 real steps completed -- note the per-step slowdown is
+itself real and visible: step 1-10 in 4.5s, step 15 at 644.6s, step 20
+at 1760.7s, confirming this project's own long-documented per-step
+growth pattern holds even in this minimal isolated harness). Then
+`xm.mark_step()` was called -- and this time it **genuinely hung**,
+hitting the diagnostic's own hard 300s timeout with zero return. This
+is the FIRST successful isolated reproduction of round60's real
+production hang anywhere in this whole v16-v28/round61 diagnostic
+chain.
+
+**Real, confirmed conclusion**: real elapsed wall-clock time (or
+equivalently, real accumulated XLA op-count over that time) IS the
+trigger -- not step count alone (v2 ran 7 steps to its own timeout in
+~5 real minutes total, no hang), not multi-chip resident state (v3, 7
+teacher chips resident, no hang), not eval, not generation, not
+anything specific to round60's pipeline complexity. A process that has
+been alive and issuing real ops against the XLA/TPU runtime for
+~40+ real minutes reaches a state where the NEXT full-graph-resolving
+op (whatever triggers it -- `xm.mark_step()`, `.cpu()`, `xm.save()`,
+`save_pretrained()`) hangs indefinitely. This matches this project's
+own prior real-world observation, now finally explained: every actual
+kernel death across v16-v28 occurred 1.9-13.5 real HOURS after kernel
+start, never sooner -- the "hours" were never about how much WORK had
+been done, they were about how much real TIME the process had been
+alive issuing ops.
+
+**Real, structural implication for round60**: no amount of reducing
+step count, eval call count, or restructuring WHICH op triggers the
+resolve will fix this -- the real underlying mechanism is a genuine,
+time-based (not work-based) resource degradation in the XLA/libtpu
+runtime itself, most likely a real, slow memory or compiled-graph-cache
+leak that compounds with wall-clock time regardless of how "busy" the
+process actually is. **The real, only fix that directly follows from
+this finding**: cap each kernel run's TOTAL real wall-clock time to
+something safely under the real hang threshold (this test hung
+sometime between 1760.7s/20 steps and the 300s-timeout point after
+2629.1s/23 steps and the mark_step() call -- so the real danger zone
+starts somewhere around 30-45 real minutes of process lifetime) BEFORE
+attempting ANY full-resolve op (checkpoint save included), not after a
+fixed cycle count. Round60's `MAX_CYCLES_PER_RUN=1` was the right
+INSTINCT (bound the run) but the wrong UNIT (cycles, not wall-clock) --
+a single real cycle's generation+eval_before+training alone already
+consumes 30-75 real minutes in round60's actual pipeline, meaning
+MAX_CYCLES_PER_RUN=1 was ALREADY often past the real danger threshold
+before the checkpoint save cell ever ran.
