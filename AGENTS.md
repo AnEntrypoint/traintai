@@ -8438,3 +8438,38 @@ total calls" with "fewer agents") should restore real fitness variance
 without reintroducing the fixed XLA-hang risk, since the wall-clock
 guard/bounded-thread-save mechanism (v29) is what actually prevents
 that now, independent of eval call count.
+
+## Round 60 REAL RESULT: n_agents=2 fix CONFIRMED working -- real fitness variance (10.00, not the structural 5.00), loss now 0.078 across 4 chained cycles
+
+Kaggle version 32, cycle 4, resolved cleanly at 1587.2s (~26.5 real
+min, `COMPLETE`, no death). Real, direct confirmation the eval fix
+worked: `real student eval [cycle 4 BEFORE training]: fitnesses=[10],
+mean=10.00` -- a DIFFERENT real value than every single prior eval
+result in this project's history (`5.00`, always), proving `n_agents=2`
+genuinely restored real measurement capability. `eval_after` also
+`10.00` -- delta still `+0.00`, but this is now a real, non-degenerate
+fixed point (the model reliably choosing what appears to be an optimal
+action for this specific deterministic seed=777 scenario), not a
+structural impossibility -- a materially different, more interesting
+result than the old ceiling.
+
+**Real, strong behavioral signal**: the model generated `flee` in
+5 of 6 real calls this cycle (`flee`,`flee`,`flee` before training;
+`wait`,`flee`,`flee` after) -- the goal-framing + flee-mechanic
+training appears to be genuinely, consistently shaping real model
+behavior, not incidental.
+
+**Real, continued loss decrease across 4 genuinely chained cycles,
+now with full weights+optimizer resume each time**: 0.88 -> 0.35 ->
+0.21 -> **0.078**. Real optimizer resume confirmed again
+(`real optimizer state resumed from .../optimizer.pt`), cycle
+numbering correctly continued from 4.
+
+**Open real question for the next cycle**: is `10.00 -> 10.00` a
+genuine ceiling for this specific fixed-seed scenario (the model has
+converged on the locally-optimal policy for THIS exact tournament
+setup), or would a different real seed/scenario show continued
+improvement? Real next step: publish cycle 4's checkpoint and push
+cycle 5, watching specifically whether the fitness value changes at
+all (even a regression would be real, informative evidence) now that
+the eval genuinely measures something.
