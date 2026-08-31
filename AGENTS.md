@@ -8079,3 +8079,51 @@ resident state (not step count, not generation, not eval) is confirmed
 as the real trigger; if it does NOT hang, the search continues (next
 candidate: whether the OTHER chips must have actually been used for
 real generation work, not just loaded).
+
+## Round 61 v3 real result: DECISIVE -- multi-chip resident state is NOT the trigger either
+
+Real result, resolved in 1145.9s (~19 real minutes) total. 7 real
+teacher models (`LiquidAI/LFM2.5-VL-3B`) loaded cleanly onto chips 1-7
+(99.9s total). A fresh training run on the same chip-0 student model
+(new optimizer, 15 steps) then ran WITH those 7 chips resident --
+completed 11/15 steps before its own 300s cutoff (real per-step growth
+pattern reproduced again: steps 1-7 fast, 0.3s-2.8s elapsed, then
+growth kicks in at step 8, 89.3s). The checkpoint save (`xm.mark_step()`
++ `.cpu()` materialization) then **completed cleanly in 136.6s with
+real files written** -- did NOT hang.
+
+**This rules out multi-chip resident state as the trigger.** Combined
+with v2's result (single-chip, no other resident state, also did not
+hang), TWO of round60's real structural differences from this isolated
+diagnostic have now been directly tested and ruled out:
+1. Training-step-count-alone / per-step cost growth (v2: hung the
+   TRAINING loop itself at step 7 via the diagnostic's OWN timeout, but
+   the checkpoint save after that did not hang).
+2. Multi-chip resident state from other loaded models (v3: 7 teacher
+   chips resident, checkpoint save still did not hang).
+
+**Real, honest reassessment**: every checkpoint-save attempt in this
+isolated diagnostic (v2, v3) has succeeded within ~90-140 real seconds.
+Every checkpoint-save attempt in round60's REAL pipeline (v25, v27,
+v28) has hung for 2+ real hours before kernel death. The isolated tests
+have now ruled out the two most obvious candidate differences (chip
+count/resident models, raw training step count). Remaining real
+differences between the isolated diagnostic and round60's actual
+pipeline, not yet tested: (a) round60 runs REAL PyBullet generation
+(physics simulation, camera rendering) on the SAME process before
+training -- the isolated diagnostic never touches PyBullet at all; (b)
+round60's teacher chips are actually USED for real `.generate()` calls
+during generation, not merely loaded (v3 loaded but never called
+`.generate()` on the teacher models); (c) round60 runs a real
+`eval_before` pass (student `.generate()` calls) before training even
+starts, which neither v2 nor v3 do; (d) round60's real training uses
+data that came from real generation (its own recently-produced SFT
+rows), not v2/v3's fixed hardcoded synthetic batch; (e) round60's full
+cycle wall-clock time before the save attempt is much longer in real
+minutes (round60: ~35-75 real minutes of generation+eval_before+
+training before the save; v2/v3: under 10 real minutes total). (e) is
+now the single most different, least-tested real variable -- worth a
+direct test: does the checkpoint save hang if the isolated diagnostic
+is made to run for a comparably long real wall-clock duration BEFORE
+attempting the save, independent of what specific work fills that
+time?
