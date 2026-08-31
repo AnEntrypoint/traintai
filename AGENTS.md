@@ -7935,3 +7935,60 @@ Not yet tested against real hardware. This is the first real attempt
 at addressing the STRUCTURAL finding from v27 (any full-cycle-lazy-
 graph resolution is dangerous, regardless of API) rather than another
 API-swap on the same call site.
+
+## Round 60 v28 real result (Kaggle version 27): DECISIVE -- the primary checkpoint save (moved BEFORE eval_after) still hung 2.6 real hours, overturning the v27 hypothesis entirely
+
+Real log pulled after `kernels status` reported `ERROR` (~11194.5s /
+~3.1 real hours, `DeadKernelError`). Training completed all 15 real
+steps cleanly (loss 7.17->0.68, 1373.5s), `real training: OK` printed.
+Then `save_student_checkpoint()`'s own `xm.mark_step()` fired (the
+deprecation warning confirms it started, twice, matching the 2 real
+calls in the notebook) at 1887.4s -- **and hung for 9306.1s (~2.6 real
+hours) before the kernel died**, with ZERO further log output. `eval_
+after` never got a chance to run at all -- confirmed via `kaggle
+kernels files`-equivalent (no config.json/optimizer.pt/cycle_history.
+json in the output listing), so this is not a "the save itself
+succeeded but eval_after killed something downstream" case -- the
+checkpoint save call, positioned at what v27 called "the structurally
+safest point," died anyway.
+
+**This completely overturns the v27 hypothesis.** The theory was that
+eval_after's ADDITIONAL lazy state stacking on top of training's own is
+what makes a full-resolve op dangerous. This result proves that's
+wrong: `xm.mark_step()` called immediately after 15 real training
+steps ALONE -- with eval_after never having run at all this cycle -- is
+already sufficient to trigger the identical hang-then-death signature.
+Moving the checkpoint save earlier in the cycle did not help, because
+the real danger threshold is apparently already crossed by training
+alone, not by the training+eval combination this whole diagnostic
+chain (v21-v27) had been assuming.
+
+**Real, honest reassessment**: this pattern (a real op that succeeded
+identically many times before -- xm.mark_step() as post-training
+cleanup, used successfully since v21 -- suddenly proving fatal) now
+recurring a THIRD time (v25's naive .cpu(), v27's post-eval_after
+mark_step(), v28's post-training-only mark_step()) suggests the real
+trigger may not be "how much lazy state has accumulated" at all, but
+something else entirely -- e.g. a genuine, cumulative TPU-side resource
+leak (memory, compiled-graph cache, or a real libtpu/XLA runtime
+degradation) that grows with WALL-CLOCK TIME or REAL OP COUNT since
+kernel start, independent of which specific ops ran. Every real death
+in this whole v16-v28 chain has occurred between ~1.9 and ~13.5 REAL
+HOURS after kernel start (never sooner) -- worth real, direct
+verification: is time-since-start a better predictor of the failure
+than "which stage of the cycle" is currently running?
+
+Given TWO structurally different placements of the exact same
+`xm.mark_step()` call (v27: after eval_after; v28: after training
+alone, before eval_after) have now BOTH failed identically, per this
+project's own real diagnostic discipline (documented in this file's own
+"Running the next round faster" section): **stop iterating on
+placement/API and build the minimal isolated diagnostic kernel next** --
+a bare single-chip script that does ONLY N real training steps then
+ONE `xm.mark_step()`/checkpoint-save call, with no generation workers,
+no eval, no pipeline complexity, to determine whether training step
+count alone (independent of anything else in this pipeline) is
+sufficient to reproduce the hang, and if so, at what real step count
+threshold. This mirrors round61's own precedent (the single highest-
+value diagnostic investment in this project's history) for exactly the
+situation it exists to resolve.
