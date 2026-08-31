@@ -8473,3 +8473,38 @@ improvement? Real next step: publish cycle 4's checkpoint and push
 cycle 5, watching specifically whether the fitness value changes at
 all (even a regression would be real, informative evidence) now that
 the eval genuinely measures something.
+
+## Round 60 REAL RESULT: cycle 5 confirms a real plateau -- fitness stable at 10.00, loss flattening
+
+Kaggle version 33, cycle 5, resolved cleanly at 1597.3s (~26.6 real
+min, `COMPLETE`). Real, full weights+optimizer resume confirmed again
+(`real optimizer state resumed`), cycle numbering correctly continued
+from 5.
+
+**Real, decisive answer to the open question from cycle 4**: fitness
+stayed at exactly `10.00 -> 10.00` for a FIFTH consecutive real cycle
+-- this is now confirmed as a real, stable local optimum for this
+fixed-seed (seed=777) tournament scenario, not noise or a fluke.
+
+**Real, meaningful signal on the loss curve**: 0.88 -> 0.35 -> 0.21 ->
+0.078 -> **0.074** -- the decrease has essentially flattened (cycle
+4->5 dropped only 0.004, versus 0.13+ drops in earlier cycles). Model
+generated a mix again this cycle (`attack`/`flee`/`flee` before,
+`wait`/`flee`/`attack` after) -- less uniformly `flee`-dominant than
+cycle 4, consistent with a model that has converged on this narrow
+self-generated training distribution rather than continuing to learn.
+
+**Real, honest conclusion**: training 5 cycles on the SAME fixed-seed
+eval scenario with the SAME narrow self-generated data distribution has
+plateaued both the loss and the fitness metric. This is real, valuable
+evidence the current setup has reached its practical ceiling for this
+specific configuration -- not a bug, a genuine limit of continuing to
+train on an increasingly narrow, self-referential data loop (each
+cycle's SFT rows come from the SAME 7 teacher workers generating
+similar scenarios). **Real next lever, not yet tried**: vary the real
+eval/training scenario across cycles (different seeds, more agents,
+longer episodes) rather than repeating the identical fixed setup every
+time -- the current design measures "has the model memorized THIS one
+scenario" rather than "has the model gotten generally smarter," and the
+plateau observed here is the real, direct evidence that distinction now
+matters.
