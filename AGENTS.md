@@ -8811,3 +8811,46 @@ User manually stopped v39 in the Kaggle web UI (RUNNING -> CANCEL_REQUESTED -> C
 Real architecture change under test for the first time on actual hardware: STUDENT_ID swapped from `LiquidAI/LFM2.5-350M` to `LiquidAI/LFM2-VL-450M` (350M LFM2 backbone + 86M SigLIP2 vision encoder, ~436M params total, loaded via `AutoProcessor`/`AutoModelForImageTextToText` with `trust_remote_code=True`), `student_policy_fn` rewritten to mirror the teacher's real vision wiring (renders a real first-person frame via `world.render_frame()`, passes it through the processor alongside the text prompt), and the training loop's tokenization step updated to pass real per-row captured frames (threaded through from `pb_tournament.py`'s `EnvTurn.frame` -> `distill_pipeline.py`'s `build_sft_row`/`build_counter_row`, committed 1765a05) through the processor for real image-conditioned SFT, closing the exact gap the user identified: "a seeing teacher doesnt really help a blind student." Resumes from the same real v37 cycle-8 checkpoint (cycle 9's training was never persisted by either v38 or v39, so no real progress is lost by this resume point vs continuing to retry the old architecture).
 
 **Explicitly unverified, no guessing beyond real evidence**: whether `trust_remote_code=True` is actually required for this transformers version, real TPU memory headroom for the larger ~436M-param student plus vision-encoder activations, and whether image-batch tokenization behaves correctly under `torch_xla`'s lazy execution model are all genuinely untested until this kernel's real log is read. If it fails (OOM, trust_remote_code error, image-batch tokenization mismatch, or a new failure mode), the real error will be captured and recorded here honestly -- no speculation ahead of that evidence.
+
+## Round 60 REAL RESULT: kernel v40 (first vision-student TPU test) FAILED FAST -- checkpoint architecture mismatch, real root cause found and fixed
+
+Real log (`round60pipelined8chip.log`, 409.6s total wall clock): teacher
+workers loaded fine (7/7, 95.5s), tournament generation completed fine
+(623 real sft rows across 7 workers, plus 31 mindcraft mixture rows =
+654 total, matching prior cycles' real row counts almost exactly) --
+so the tournament/frame-capture code itself is NOT implicated. The real
+failure was student model load: `AutoModelForImageTextToText.from_pretrained`
+raised `ValueError: Unrecognized configuration class Lfm2Config ... for
+this kind of AutoModel: AutoModelForImageTextToText` (valid vision types
+listed include `Lfm2VlConfig`, but NOT plain `Lfm2Config`).
+
+**Real root cause**: `resume_checkpoint_present` only checked whether
+`config.json` existed at `/kaggle/input/round60-checkpoint`, not whether
+its ARCHITECTURE matched the new `STUDENT_ID` (`LiquidAI/LFM2-VL-450M`).
+The live checkpoint dataset still held cycle-8's real OLD text-only
+`LFM2.5-350M` weights (`config.json model_type="lfm2"`), so
+`student_weights_source` pointed at that directory, and
+`AutoModelForImageTextToText` correctly rejected the mismatched plain-
+text config -- this was never a `trust_remote_code` or transformers-
+version problem as previously hypothesized; it was a genuine resume-
+path bug that silently assumed any present checkpoint is always weight-
+compatible with whatever `STUDENT_ID` happens to be set to. Because the
+sanity gate correctly detected `student_load_ok=False` and skipped both
+training and checkpoint save, no real data was corrupted -- this failed
+safely, just fast (409.6s vs ~1300-1600s/cycle for prior real cycles),
+and cycle 9's `cycle_history` row was written with real nulls
+(`final_loss=None, eval_before=None, eval_after=None`) rather than a
+fabricated placeholder.
+
+**Real fix**: added a `_real_config_model_type()` probe (reads
+`config.json` from either a local directory or the HF Hub via
+`hf_hub_download`) and now compare the checkpoint's real `model_type`
+against `STUDENT_ID`'s own real published `model_type` before trusting
+the checkpoint for weights -- on a mismatch, `resume_checkpoint_present`
+is set `False` and the student loads fresh from `STUDENT_ID` instead
+(a genuine architecture swap must start fresh, not silently fail deep
+into the cycle). cycle_history/optimizer resume logic already correctly
+gated on the same flag, so this one check covers both. Regenerated,
+verified via `ast.parse()` on all 14 substantive cells (same 1 pre-
+existing multi-magic cell false-positive as before, unrelated to this
+change).
