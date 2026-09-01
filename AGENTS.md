@@ -8588,3 +8588,38 @@ at this scale. Given the real per-run TPU-time cost is climbing as the
 eval scale grows (this cycle's larger eval pushed close to the safety
 margin), further ceiling-raising should be weighed against diminishing
 real informational value versus TPU quota cost.
+
+## Round 60: real bug found -- cycle 7's summary row missing from the published checkpoint's cycle_history.json (metadata only, NOT a training-data loss)
+
+Real, direct inspection of cycle 7's downloaded checkpoint found
+`cycle_history.json` still has only 6 rows (cycle 6's), not 7. Root
+cause, confirmed by reading the real code: `save_student_checkpoint()`'s
+PRIMARY call (right after training, before eval_after) happens BEFORE
+`cycle_history.append(cycle_summary_row)` (which only runs after
+eval_after completes) -- so the primary save's `cycle_history.json`
+snapshot never includes the CURRENT cycle's own row, only prior
+cycles'. The SECONDARY (end-of-run) save, which normally appends the
+current row after eval_after finishes, was correctly SKIPPED this
+cycle by the v29 wall-clock guard (cycle 7 ran long due to the larger
+eval). Combined, cycle 7's row was never persisted anywhere.
+
+**Real, important distinction**: this is a metadata/logging gap, NOT a
+training-data loss -- `model.safetensors`/`optimizer.pt` in the primary
+save ARE cycle 7's real trained weights/optimizer state (captured
+fresh at save time, independent of `cycle_history`), so cycle 8 will
+still correctly resume from real cycle-7-trained weights. Only the
+human-readable/audit-trail `cycle_history.json` log is missing cycle
+7's own row (it will show cycle 8's real training as "cycle 8" but the
+prior row will jump from 6 to 8, a real, visible gap when this file is
+read later, though the loss/fitness values FOR that gap are already
+recorded in this AGENTS.md entry from the live log).
+
+**Real fix needed** (not yet implemented): the primary save should
+append a real, marked-incomplete/interim cycle_history row for the
+CURRENT cycle (with a real, honest flag like `'eval_after': None`, same
+pattern already used for the non-finite-loss gate's own early-exit
+row) before saving, so a primary-only save (no secondary) still
+produces an accurate row count, or the secondary save's wall-clock
+guard should specifically still attempt a lightweight append-only
+JSON write of just `cycle_history.json` (cheap, no XLA/checkpoint risk)
+even when skipping the full model/optimizer re-save.
