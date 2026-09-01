@@ -8734,3 +8734,19 @@ increase `n_ticks` (cheap; per-call eval cost measured ~5-7s) to
 give combat/trade a real chance to occur within the eval episode,
 re-verified live via `pb_tournament.py`'s own self-check before the
 next Kaggle push.
+
+## Round 60: real checkpoint-republish gap closed, v38 pushed with both real fixes live (n_ticks=14, real cycle-8 weights)
+
+Downloaded v37's own real checkpoint output (model.safetensors
+843,202,280 bytes, optimizer.pt 1,686,492,939 bytes -- both matched
+exactly, cycle_history.json 1447 bytes = 8 real rows), republished to
+`heclgang/round60-checkpoint` (detached background upload, ~2.5GB,
+took several real minutes), polled `kaggle datasets files` until the
+new version's real byte sizes/timestamps were confirmed live
+(cycle_history.json 1447 bytes @ 02:28:28, superseding the stale
+00:46 manually-repaired cycle-7 version) before pushing the next
+kernel -- honoring the documented server-side propagation-delay
+trap this project has hit before. Pushed as Kaggle kernel version 38,
+which will resume from v37's real cycle-8 weights (not repeat it)
+AND use the real n_ticks=14 eval fix. This is the first real test of
+whether the eval now has genuine continuous discriminating power.
