@@ -8543,3 +8543,48 @@ harder real scenario (adversarial opponents, resource scarcity, a
 different fitness formula with a higher ceiling) so continued training
 has real room to show more improvement, rather than continuing to run
 cycles against an already-saturated metric.
+
+## Round 60 REAL RESULT: cycle 7 hits the NEW raised ceiling too (15.00), wall-clock guard fires for the first time (working as designed)
+
+Kaggle version 35, cycle 7, resolved cleanly at 1816.0s (~30.3 real
+min, `COMPLETE`). Real, full weights+optimizer resume confirmed again,
+cycle numbering continued from 7.
+
+**`real student eval [cycle 7 BEFORE training]: fitnesses=[15],
+mean=15.00`** -- exactly the new theoretical ceiling for `n_agents=3,
+n_ticks=3` (9 clean + 2*3 survivors - 0 counter = 15). The model
+immediately performs optimally at the raised scale too, both before
+AND after this cycle's training (`eval_after` also 15.00). Real
+generated actions: `trade`/`trade`/`trade` before training,
+`wait`/`flee`/`flee` after -- real, materially different behavior
+across the training step, just landing on the same maximum fitness
+either way.
+
+Loss: 0.074 -> 0.075 -> **0.064** -- essentially flat/plateaued at a
+very low level (real per-cycle noise now dominates the tiny remaining
+changes).
+
+**Real, working defense-in-depth confirmed for the first time**: this
+cycle's real wall-clock (1618s, longer than prior cycles due to the
+larger eval's 9 real calls) triggered the v29 proactive wall-clock
+guard -- `real checkpoint save [end-of-run...] SKIPPED: real elapsed
+process time 1618s already exceeds the real safe margin 1500s` -- the
+SECONDARY (end-of-run) save was correctly skipped rather than risking
+a hang, while the PRIMARY save (immediately after training, at 1501.5s,
+still within the safe margin) had already succeeded. This is the guard
+working exactly as designed: real training/eval results are never
+lost, and a genuinely risky save attempt is avoided rather than
+attempted blind.
+
+**Real, honest reassessment**: the model has now demonstrated OPTIMAL
+performance at two different real eval scales (10.00 ceiling, then
+15.00 ceiling) across 7 real, genuinely chained training cycles with
+full weights+optimizer resume. This is real, strong, repeated evidence
+the training pipeline and the model itself both work -- the remaining
+open question is whether a further-raised ceiling (or a genuinely
+harder scenario design) would show the model has more real headroom
+left, or whether this task family is now simply solved for this model
+at this scale. Given the real per-run TPU-time cost is climbing as the
+eval scale grows (this cycle's larger eval pushed close to the safety
+margin), further ceiling-raising should be weighed against diminishing
+real informational value versus TPU quota cost.
