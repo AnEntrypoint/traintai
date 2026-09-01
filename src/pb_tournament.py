@@ -113,7 +113,21 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
                 f"Survive, avoid fights you cannot win, flee real danger, and trade profitably when you can. "
                 f"Legal actions: {sorted(LEGAL_ACTIONS)}. Respond with exactly one legal action word."
             )
-            turns.append(EnvTurn(state_text, action, was_legal, outcome_good))
+            # v38 real fix: a vision-capable teacher (LFM2.5-VL-3B) was already
+            # rendering real frames via world.render_frame() inside its own
+            # policy closure, but that frame was discarded once the action
+            # string came back -- EnvTurn only ever recorded state_text, so a
+            # student distilled from these rows learned to imitate the
+            # teacher's action from text alone, never from what it actually
+            # saw. Capturing the SAME real frame here (agent's own
+            # first-person view, matching what a vision policy_fn renders)
+            # and attaching it to the turn closes that gap: a vision-capable
+            # student can now train on (frame, state_text, action) triples
+            # instead of (state_text, action) pairs with a blind teacher
+            # signal underneath. Kept as a real numpy array (not re-encoded)
+            # so downstream code decides its own serialization.
+            frame = world.render_frame(name, width=320, height=240)
+            turns.append(EnvTurn(state_text, action, was_legal, outcome_good, frame=frame))
             agent.tick_needs(hunger_decay=0.3, thirst_decay=0.4)
         world.step(10)
 

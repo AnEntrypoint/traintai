@@ -43,13 +43,18 @@ class EnvTurn:
     `state` is whatever the environment's own real render/observation
     produces (text, or a real image path/array reference for a
     vision-capable teacher) -- this module does not interpret it, only
-    classifies the turn."""
+    classifies the turn. `frame`, when supplied, is the real rendered
+    image (e.g. a numpy RGB array from pb_world.py's render_frame()) the
+    policy actually saw when it produced `action` -- carried through so a
+    vision-capable student can train on the same real visual input a
+    vision-capable teacher used, not just its distilled text output."""
 
-    def __init__(self, state, action, was_legal, outcome_good):
+    def __init__(self, state, action, was_legal, outcome_good, frame=None):
         self.state = state
         self.action = action
         self.was_legal = was_legal
         self.outcome_good = outcome_good
+        self.frame = frame
 
     def classify(self):
         if self.was_legal and self.outcome_good:
@@ -78,9 +83,16 @@ def classify_episode(turns):
 def build_sft_row(turn):
     """A clean turn -> a standard SFT training row, same {"text": ...}
     shape every other data source in this project already uses (see
-    balrog_direction_drill.py, st_prepare.py)."""
+    balrog_direction_drill.py, st_prepare.py). When the turn carries a
+    real captured frame (vision-capable generation), it is attached under
+    "frame" so a vision-capable student's training loop can pass the same
+    real image through its processor -- absent entirely for text-only
+    turns, so this stays a strict superset of the pre-vision row shape."""
     assert turn.was_legal and turn.outcome_good
-    return {"text": f"{turn.state}\nassistant: {turn.action}"}
+    row = {"text": f"{turn.state}\nassistant: {turn.action}"}
+    if turn.frame is not None:
+        row["frame"] = turn.frame
+    return row
 
 
 def build_counter_row(turn, legal_action_space):
@@ -92,11 +104,14 @@ def build_counter_row(turn, legal_action_space):
     NOT tokenize -- that stays in st_prepare.py's own real tokenizer
     context, same separation of concerns as the existing BALROG pipeline."""
     assert not turn.was_legal
-    return {
+    row = {
         "text": f"{turn.state}\nassistant: {turn.action}",
         "illegal_action": turn.action,
         "legal_action_space": sorted(legal_action_space),
     }
+    if turn.frame is not None:
+        row["frame"] = turn.frame
+    return row
 
 
 def episode_to_rows(turns, legal_action_space):
