@@ -8854,3 +8854,66 @@ gated on the same flag, so this one check covers both. Regenerated,
 verified via `ast.parse()` on all 14 substantive cells (same 1 pre-
 existing multi-magic cell false-positive as before, unrelated to this
 change).
+
+## Round 60 REAL RESULT: kernel v41 (second vision-student TPU test, architecture-mismatch fix applied) -- checkpoint-mismatch fix CONFIRMED working, but hit TWO NEW real vision-integration bugs
+
+Real log confirms the v40 fix worked exactly as intended: `real checkpoint
+architecture mismatch: checkpoint model_type='lfm2' != STUDENT_ID
+model_type='lfm2_vl' -- treating checkpoint as NOT resumable for
+weights, starting fresh from STUDENT_ID` -- cycle numbering correctly
+restarted at 1, and `student load (chip 0, source=LiquidAI/LFM2-VL-450M):
+OK (took 23.7s)`. Teacher workers loaded fine (7/7, 82.9s). Real
+tournament generation completed fine (610 sft rows across 7 workers, 30
+mindcraft rows added, 640 total).
+
+**Real bug #1 (student generation, BEFORE-training eval, all 30/30 calls
+failed)**: `NotImplementedError: "compute_index_ranges_weights" not
+implemented for 'BFloat16'` inside SigLIP2's
+`resize_positional_embeddings -> F.interpolate` (antialiased bilinear
+resize of the vision tower's positional embeddings). Real root cause:
+this specific interpolate op has no real bf16 kernel on this backend --
+`pixel_values` was bf16 (matching the model's load dtype) and this is
+the one real op in the whole forward pass that doesn't support it. Every
+real `student_policy_fn` generation call fell back to a random legal
+action (`fallback_exceptions=30`, `generated=0`) -- `eval_before=37.0`
+was therefore a real RANDOM-POLICY fitness number, not a real signal
+about the model's actual capability (this project's own prior
+random-policy fitness reference points make 37.0 plausible for a random
+policy at whatever n_ticks/n_agents this eval uses, not evidence of
+learning).
+
+**Real bug #2 (training loop, blocked cycle 1 entirely)**:
+`ValueError('The number of images in the text [0, 0, 0, 0] and images
+[4] should be the same.')`. Real root cause: `_chat_template_row()`
+(the training-loop's chat-template helper) always rendered
+`{'role': 'user', 'content': prompt_part}` -- a PLAIN STRING with
+zero real `{'type': 'image'}` content blocks -- even for rows carrying
+a real captured frame, while `student_tok(images=batch_frame_arrs,
+text=batch_texts, ...)` was given 4 real images per batch. The
+generation path (`student_policy_fn`) already used the correct
+`[{'type': 'image'}, {'type': 'text', ...}]` content shape; the training
+path never matched it -- a real gap in this session's own frame-
+threading work, not caught by local self-checks (which don't exercise
+the real chat-template + real Lfm2VlProcessor combination).
+
+**Both are real, honest failures caught cleanly by the sanity gate**
+(no training happened, no corrupted checkpoint state) -- `real
+checkpoint saved [end-of-run (secondary safety net)]` did write a real
+file, but it's the UNTRAINED fresh `LFM2-VL-450M` base weights (zero
+real gradient steps applied, training never ran), so NOT published --
+resuming from it would add a pointless round-trip with zero real
+progress captured versus letting the next kernel simply start fresh
+from `STUDENT_ID` again (identical real starting point).
+
+**Real fixes applied**: (1) `_chat_template_row()` now takes a
+`has_frame` flag and renders `[{'type': 'image'}, {'type': 'text', ...}]`
+for rows with a real captured frame, matching `student_policy_fn`'s
+already-correct shape exactly. (2) both real call sites
+(`student_policy_fn`'s generation and the training loop's tokenization)
+now explicitly upcast `enc['pixel_values']` to `torch.float32` right
+after the processor call, before the device move -- a real, narrow fix
+(one small image tensor, not the whole model) that avoids the
+unsupported bf16 interpolate path without touching the LM's own real
+bf16 weights/activations. Regenerated, verified via `ast.parse()` on all
+14 substantive cells (same 1 pre-existing multi-magic-cell false
+positive as before, unrelated).
