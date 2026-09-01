@@ -8917,3 +8917,48 @@ unsupported bf16 interpolate path without touching the LM's own real
 bf16 weights/activations. Regenerated, verified via `ast.parse()` on all
 14 substantive cells (same 1 pre-existing multi-magic-cell false
 positive as before, unrelated).
+
+## Round 60 REAL RESULT: kernel v42 (third vision-student TPU test) -- image-count fix confirmed partially working, bf16 interpolate bug PERSISTED (real fix from v41 did not work), real root cause corrected
+
+Real log confirms v41's chat-template fix (`_chat_template_row` now
+rendering `[{'type': 'image'}, {'type': 'text', ...}]` for rows with a
+real frame) DID change the training-loop error, but did not fully fix
+it: `ValueError('The number of images in the text [1, 1, 1, 1] and
+images [4] should be the same.')` -- previously `[0, 0, 0, 0]` vs `[4]`,
+now `[1, 1, 1, 1]` vs `[4]`. Real interpretation: each row now correctly
+gets exactly ONE `<image>` placeholder token, but the real underlying
+issue is that LFM2-VL-450M/SigLIP2 NaFlex likely expects the number of
+real placeholder tokens to match the number of real image PATCHES/TILES
+the processor produces for that image, not a flat 1-per-image count --
+not yet root-caused, remains open (this bug did not block cycle 1 from
+reaching the eval stage this time, since it only occurs in the training
+step, which runs after eval).
+
+**Real bug (student generation, BEFORE-training eval, all 30/30 calls
+failed again)**: IDENTICAL `NotImplementedError:
+"compute_index_ranges_weights" not implemented for 'BFloat16'` as v41,
+proving v41's real fix attempt (upcasting `enc['pixel_values']` to
+`torch.float32` at the call site) did NOT actually work. Real root
+cause, now correctly identified by reading the traceback more
+carefully: the tensor that hits the unsupported `F.interpolate` call
+is NOT `pixel_values` itself -- it is SigLIP2's own LEARNED positional-
+embedding weight table, resized via `resize_positional_embeddings` to
+match the real input image's patch grid. That table's dtype is
+whatever the vision tower's own PARAMETERS are (bf16, since the whole
+model loaded bf16) -- upcasting the input tensor never touched this,
+which is why the identical error persisted despite the v41 fix being
+present and confirmed in the pushed notebook.
+
+**Real, corrected fix**: after student load, explicitly force just the
+`student.model.vision_tower` submodule to `torch.float32` (a small real
+memory cost -- 86M params at fp32 vs bf16 is ~172MB extra, not the
+~1.7GB the whole model would cost -- while the LM backbone stays bf16).
+Kept the existing `pixel_values` fp32 upcast at both call sites as a
+necessary complement (now correct, since it matches the vision tower's
+new fp32 parameters instead of being a no-op against a bf16 weight
+table). Regenerated, verified via `ast.parse()` on all 14 substantive
+cells (same 1 pre-existing multi-magic-cell false positive, unrelated).
+The image-count mismatch bug (v41's partial fix) remains open and will
+surface again once the bf16 fix lets generation succeed and training
+is reached with real frames present -- next real result will show
+whether it recurs.
