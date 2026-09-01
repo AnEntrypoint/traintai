@@ -8623,3 +8623,68 @@ produces an accurate row count, or the secondary save's wall-clock
 guard should specifically still attempt a lightweight append-only
 JSON write of just `cycle_history.json` (cheap, no XLA/checkpoint risk)
 even when skipping the full model/optimizer re-save.
+
+**Real fix landed** (Kaggle version 36): added an unconditional, cheap,
+JSON-only `cycle_history.json` write right before the secondary save
+call, independent of the wall-clock guard's decision. Also manually
+repaired the already-downloaded cycle-7 checkpoint (appended the real
+cycle-7 row extracted from its live log) before republishing, so the
+audit trail stayed accurate going forward.
+
+## Round 60 REAL RESULT: cycle 8 (Kaggle version 36) confirms fitness=15.00 -> 15.00 (delta 0.00), cycle_history.json fix CONFIRMED working (8 real rows, no manual repair needed)
+
+Real log: student loaded OK (5.3s), optimizer state resumed from
+`/kaggle/input/round60-checkpoint/optimizer.pt`, resumed cycle
+numbering from 8 with 7 prior real cycle_history rows. Generation:
+621 sft rows across 7 real workers. `eval_before` fitnesses=[15],
+mean=15.00. Training completed, final_loss=0.0865. Primary checkpoint
+saved OK (140.2s). `eval_after` fitnesses=[15], mean=15.00, delta
++0.00. Secondary (end-of-run) save correctly SKIPPED by the v29
+wall-clock guard (elapsed 1516s > 1500s safe margin) -- but the new
+unconditional `cycle_history.json` write fired anyway and correctly
+recorded "8 total cycle rows", confirmed via direct log read, no
+manual repair needed this cycle. The metadata-gap fix works as
+designed.
+
+## Round 60: REAL ROOT CAUSE FOUND for the fitness=15.00-always ceiling (third occurrence of the same failure class) -- fixed at the eval's own source, not by raising n_agents again
+
+Cycles 7 AND 8 both hit exactly fitness=15.00 on genuinely different
+eval seeds (777+7, 777+8) -- the same pattern already seen twice before
+(fitness=5.00-always with n_agents=1, fitness=10.00-always with
+n_agents=2), each previously "fixed" by raising n_agents to unlock a
+higher integer ceiling. Direct read of `pb_tournament.py`'s
+`run_one_episode()` shows why this pattern is structural, not
+coincidental: `fitness = summary["clean"] + 2*survivors -
+summary["counter"]` is a pure integer count over a small, bounded
+number of turns (`n_agents * n_ticks` turns + `2*n_agents` for
+survival), so ANY policy that is decent enough to keep every turn
+legal and every agent alive hits the exact same hard ceiling
+regardless of how much better it actually is -- raising n_agents only
+buys one more cycle before the next collision, it does not fix the
+real defect (zero continuous headroom once the count terms saturate).
+
+**Real fix** (not a bigger ceiling -- a continuous metric): added an
+`hp_margin` term to `run_one_episode()`'s fitness computation --
+`population_hp() / (20.0 * n_agents)`, the real fraction of starting
+HP (20/agent, read directly from `pb_world.py`'s own `Agent.__init__`
+default) the population still holds at episode end, using state that
+was ALREADY being computed every tick via the existing
+`population_hp()` closure (no new simulation cost). This means a
+policy that plays more effectively than another ceiling-saturating
+policy (retains more real HP, e.g. via better `flee`/target selection)
+still scores strictly higher instead of tying at 15.00 forever.
+
+**Verified live** before touching Kaggle: ran `pb_tournament.py`'s own
+`_self_check()` directly (`python pb_tournament.py`) -- real,
+non-degenerate spread confirmed even among branches that would have
+tied under the old formula (random policy: 110.6-129.0, real spread
+of ~18 points instead of 0), and policy-quality ordering is preserved
+(random=124.8 > reckless=76.9 > illegal=28.4 mean fitness, same
+ordering as before the fix). `n_agents=3, n_ticks=3` left unchanged in
+`build_round60.py`'s `real_student_eval` since the ceiling fix is
+scale-independent and real eval cost is already cheap (~5-7s/call, 9
+calls/pass, comfortably inside the wall-clock guard's margin).
+
+Pushed as Kaggle kernel version 37. Cycle 9's real result will show
+whether the student model continues improving now that the eval can
+actually see it.

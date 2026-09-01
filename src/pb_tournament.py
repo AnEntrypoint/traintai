@@ -123,7 +123,21 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
     # LLM judge, no hand-tuned magic constant beyond simple integer
     # weights whose ONLY role is relative ordering, same shape as this
     # project's own documented fitness formula for the earlier design).
-    fitness = summary["clean"] + 2 * survivors - summary["counter"]
+    #
+    # v35 real fix: round60 cycles 7 AND 8 both hit fitness=15.00 exactly
+    # (the real integer ceiling of clean(9)+2*survivors(3)-counter(0) at
+    # n_agents=3,n_ticks=3) on two genuinely different seeds -- the count-
+    # based formula has zero remaining headroom once a policy is decent
+    # enough to keep every turn legal and every agent alive, so it stops
+    # discriminating real improvement right when improvement matters most.
+    # Adds a small continuous margin term from state ALREADY computed
+    # above (final population hp, fraction of starting hp retained) so a
+    # policy that plays more cautiously/effectively than another
+    # ceiling-saturating policy still scores strictly higher -- no new
+    # simulation state, no LLM judge, just reading real hp that was
+    # already being tracked every tick via population_hp().
+    hp_margin = population_hp() / (20.0 * n_agents)  # real fraction of max starting hp (20/agent) still held
+    fitness = summary["clean"] + 2 * survivors - summary["counter"] + hp_margin
     world.close()
     return turns, fitness, summary
 
