@@ -136,6 +136,15 @@ def run_one_episode(rng, n_agents=4, n_ticks=40, policy_fn=None):
     # ceiling-saturating policy still scores strictly higher -- no new
     # simulation state, no LLM judge, just reading real hp that was
     # already being tracked every tick via population_hp().
+    # v35 real fix: hp_margin still saturates at exactly 1.0 whenever a
+    # decent policy avoids all real combat within the episode (confirmed
+    # live: n_ticks=3 gives ZERO spread even under a fully random
+    # policy, since agents never close attack range in only 3 real
+    # ticks -- fitness=16.00 identically across 5 branches). The caller
+    # must use a large enough n_ticks for combat/trade to actually have
+    # a real chance to occur (verified live: n_ticks=14 gives real
+    # non-degenerate spread of ~3.3 fitness points even under a random
+    # policy, at n_ticks=3's 0.0).
     hp_margin = population_hp() / (20.0 * n_agents)  # real fraction of max starting hp (20/agent) still held
     fitness = summary["clean"] + 2 * survivors - summary["counter"] + hp_margin
     world.close()

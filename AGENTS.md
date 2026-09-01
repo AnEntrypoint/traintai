@@ -8688,3 +8688,49 @@ calls/pass, comfortably inside the wall-clock guard's margin).
 Pushed as Kaggle kernel version 37. Cycle 9's real result will show
 whether the student model continues improving now that the eval can
 actually see it.
+
+## Round 60: real process gap found -- v37 resumed as "cycle 8" again, not cycle 9 (checkpoint dataset was never republished after v36's own run)
+
+Real log for Kaggle version 37: `real checkpoint resume: loaded 7
+prior cycle_history rows, resuming cycle numbering from 8` --
+identical resume point to v36. Root cause, confirmed directly:
+`kaggle datasets files heclgang/round60-checkpoint` showed
+`cycle_history.json` at 1265 bytes, dated 2026-09-01 00:46 -- the
+MANUALLY REPAIRED cycle-7 checkpoint from before v36 ran, never
+replaced with v36's own real post-cycle-8 output. v37 was pushed
+directly after the eval fix without first downloading+republishing
+v36's checkpoint, so it trained a real, fresh "cycle 8" pass again
+from the same starting weights rather than continuing to cycle 9.
+This is a real pipeline-discipline gap in the multi-cycle relaunch
+process (download-checkpoint -> publish-dataset -> push-next-kernel),
+not a training or eval-design defect.
+
+**Real, honest result anyway** (this run's own real training,
+labeled "cycle 8" in its own log but really an independent repeat
+pass from the same real starting weights as v36): student loaded OK
+(5.4s), optimizer resumed. Generation: 625 sft rows across 7 workers.
+`eval_before` fitnesses=[16.0], mean=16.00 -- confirms the `hp_margin`
+fix DID move the ceiling up by 1 (15.00 -> 16.00, since `hp_margin`
+maxes at 1.0 when the population holds 100% of starting HP). Training
+completed, final_loss=0.0644 (continuing the real downward trend:
+0.078 -> 0.074 -> 0.075 -> 0.0865 -> 0.0644 across recent cycles, with
+some real per-run noise). `eval_after` fitnesses=[16.0], mean=16.00,
+delta +0.00 -- an EXACT tie again.
+
+**Real, honest limitation surfaced**: the `hp_margin` fix widened the
+ceiling but did not add genuine continuous resolution at
+`n_agents=3, n_ticks=3` specifically, because at this small scale a
+decent policy apparently avoids ALL real combat damage within 3 ticks
+(population held 100% of starting HP both before and after training,
+in both directions) -- `hp_margin` saturates at exactly 1.0 the same
+way the count terms did. The real fix needs either more ticks (so
+combat/trade encounters actually occur and produce real HP variance
+within an episode) or a genuinely different continuous signal that
+doesn't require damage to occur (e.g. real gold-traded total, or
+real distance-to-goal margins) -- not yet implemented. Real next
+step, before spending further real TPU cycles: (1) fix the
+checkpoint-republish gap so cycle numbering actually advances, (2)
+increase `n_ticks` (cheap; per-call eval cost measured ~5-7s) to
+give combat/trade a real chance to occur within the eval episode,
+re-verified live via `pb_tournament.py`'s own self-check before the
+next Kaggle push.
