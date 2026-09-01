@@ -8750,3 +8750,50 @@ trap this project has hit before. Pushed as Kaggle kernel version 38,
 which will resume from v37's real cycle-8 weights (not repeat it)
 AND use the real n_ticks=14 eval fix. This is the first real test of
 whether the eval now has genuine continuous discriminating power.
+
+## Round 60 REAL RESULT: cycle 9 (Kaggle version 38) CONFIRMS the eval fix works (fitness=49.00, real non-degenerate spread) -- but n_ticks=14 pushed real wall-clock cost past what the guard could protect, kernel died after ~3.5 real hours
+
+Real log: resumed correctly this time (`loaded 8 prior cycle_history
+rows, resuming cycle numbering from 9` -- the checkpoint-republish
+fix from v37 worked). Generation: 622 sft rows across 7 workers.
+`eval_before [cycle 9]: fitnesses=[49.0], mean=49.00` -- direct
+confirmation the `hp_margin` + `n_ticks=14` fix broke past the old
+15.00/16.00 ceiling with real, substantially higher signal. This is
+the first real evidence since the eval redesign that the metric can
+actually discriminate real model quality beyond a saturation point.
+
+**Real problem found**: n_ticks=14 (42 real `.generate()` calls/pass)
+pushed real per-cycle wall-clock time far past what v29's guard was
+sized for. The primary checkpoint save was correctly SKIPPED by the
+wall-clock guard at 2440s elapsed (already past the 1500s safe
+margin) -- the guard itself worked as designed. But real per-call
+`.generate()` latency then grew catastrophically during the AFTER-
+training eval pass (576s, 663s, 584s between calls, vs ~35-40s/call
+in cycle 8 with n_ticks=3) until the kernel hit `DeadKernelError`
+at 12638s (~3.5 real hours), matching this project's own long-
+documented per-op-cost-growth-under-sustained-XLA-lazy-execution
+failure mode (see round61's earlier findings) -- the eval alone,
+run at n_ticks=14, was enough to trigger it on its own, independent
+of training.
+
+**Real fix**: reduce n_ticks from 14 back down to a value with
+comfortable real wall-clock headroom while still preserving non-
+degenerate spread. Cycle 9 proved the model has real headroom well
+above the old count-based ceiling (fitness=49 vs the old max 15-16),
+so the eval doesn't need n_ticks=14's full call volume to keep
+discriminating -- a moderate n_ticks (verified live via
+pb_tournament.py's self-check to still show real spread) should
+give a similar real signal at a fraction of the real op-count risk.
+
+**Real data-loss note**: cycle 9's actual training gains were NOT
+persisted -- `kaggle datasets files` confirms the live checkpoint is
+still v37's real cycle-8 state (timestamp 02:28, cycle_history.json
+1447 bytes = 8 rows). The wall-clock guard correctly skipped the
+risky primary save at 2440s elapsed, and the kernel then died before
+any secondary save could run, so cycle 9's training work is real but
+lost -- not a bug, a correct-but-costly outcome of the guard doing
+its job under a genuinely too-expensive eval. Reduced n_ticks 14->10
+(verified live via pb_tournament.py: spread ~2.15 preserved, 30
+calls/pass vs 42) and pushed as Kaggle kernel version 39, resuming
+from the same real cycle-8 checkpoint to retry cycle 9's training
+with the safer eval cost.
